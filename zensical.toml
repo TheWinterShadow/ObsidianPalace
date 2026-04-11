@@ -16,7 +16,12 @@ edit_uri = "edit/main/docs/"
 nav = [
   { "Home" = "index.md" },
   { "Architecture" = "architecture/index.md" },
-  { "Setup Guide" = "setup/index.md" },
+  { "Setup Guide" = [
+    { "Overview" = "setup/index.md" },
+    { "Deployment" = "setup/deployment.md" },
+    { "Connecting Clients" = "setup/connection.md" },
+    { "Troubleshooting" = "setup/troubleshooting.md" },
+  ]},
   { "MCP Tools" = "mcp-tools/index.md" },
   { "Operations" = "deployment/index.md" },
   { "API Reference" = [
