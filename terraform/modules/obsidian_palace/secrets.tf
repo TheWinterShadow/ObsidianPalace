@@ -6,7 +6,6 @@ locals {
     google-oauth-client-secret = var.google_oauth_client_secret
     allowed-email              = var.allowed_email
     anthropic-api-key          = var.anthropic_api_key
-    obsidian-sync-credentials  = var.obsidian_sync_credentials
   }
 }
 

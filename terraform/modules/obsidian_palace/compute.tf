@@ -72,7 +72,11 @@ locals {
       mkfs.ext4 -m 0 -F -E lazy_itable_init=0,lazy_journal_init=0 "$DEVICE"
     fi
 
-    mount -o discard,defaults "$DEVICE" "$DATA_DIR"
+    if mountpoint -q "$DATA_DIR"; then
+      log "Persistent disk already mounted at $DATA_DIR"
+    else
+      mount -o discard,defaults "$DEVICE" "$DATA_DIR"
+    fi
     mkdir -p "$DATA_DIR/vault" "$DATA_DIR/chromadb" "$DATA_DIR/obsidian-config"
     mkdir -p "$DATA_DIR/letsencrypt" "$DATA_DIR/certbot-webroot"
 
@@ -90,13 +94,7 @@ locals {
     OAUTH_CLIENT_SECRET=$(fetch_secret "obsidian-palace-google-oauth-client-secret")
     ALLOWED_EMAIL=$(fetch_secret "obsidian-palace-allowed-email")
     ANTHROPIC_API_KEY=$(fetch_secret "obsidian-palace-anthropic-api-key")
-    OBSIDIAN_SYNC_CREDS=$(fetch_secret "obsidian-palace-obsidian-sync-credentials")
-
-    # --- Write Obsidian Sync credentials ---
-    # obsidian-headless reads ~/.obsidian-headless/auth_token (plain text).
-    echo "$OBSIDIAN_SYNC_CREDS" | base64 -d > "$DATA_DIR/obsidian-config/auth_token"
-    chmod 600 "$DATA_DIR/obsidian-config/auth_token"
-    log "Obsidian Sync credentials written"
+    log "Secrets fetched"
 
     # --- SSL certificate via certbot (runs in Docker on COS) ---
     CERT_DIR="$DATA_DIR/letsencrypt"

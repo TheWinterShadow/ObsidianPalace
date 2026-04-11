@@ -14,8 +14,9 @@ FROM python:3.12-slim-bookworm
 COPY --from=node-layer /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-layer /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=node-layer /usr/local/bin/npm /usr/local/bin/npm
-# Symlink the ob CLI
-RUN ln -s /usr/local/lib/node_modules/obsidian-headless/bin/ob.js /usr/local/bin/ob
+# Symlink the ob CLI (entry point is cli.js in package root, not bin/ob.js)
+RUN ln -sf /usr/local/lib/node_modules/obsidian-headless/cli.js /usr/local/bin/ob \
+    && chmod +x /usr/local/lib/node_modules/obsidian-headless/cli.js
 
 # System dependencies — supervisor + nginx for SSL termination
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -85,12 +85,6 @@ variable "anthropic_api_key" {
   sensitive   = true
 }
 
-variable "obsidian_sync_credentials" {
-  description = "Obsidian Sync credential file contents (base64-encoded), injected at container startup."
-  type        = string
-  sensitive   = true
-}
-
 # --- Optional ---
 
 variable "machine_type" {

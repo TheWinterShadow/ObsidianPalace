@@ -55,12 +55,6 @@ variable "anthropic_api_key" {
   sensitive   = true
 }
 
-variable "obsidian_sync_credentials" {
-  description = "Obsidian Sync credential file contents (base64-encoded)."
-  type        = string
-  sensitive   = true
-}
-
 # --- Optional overrides ---
 
 variable "allowed_ssh_cidrs" {

@@ -14,7 +14,6 @@ module "obsidian_palace" {
   google_oauth_client_secret = var.google_oauth_client_secret
   allowed_email              = var.allowed_email
   anthropic_api_key          = var.anthropic_api_key
-  obsidian_sync_credentials  = var.obsidian_sync_credentials
 
   # Network access.
   allowed_ssh_cidrs   = var.allowed_ssh_cidrs
