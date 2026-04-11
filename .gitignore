@@ -16,3 +16,6 @@ htmlcov/
 .venv/
 venv/
 AGENTS.md
+# OAuth client secrets (notebook testing)
+client_secret.json
+notebooks/

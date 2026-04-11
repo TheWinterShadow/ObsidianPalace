@@ -20,7 +20,7 @@ env:
   TF_CLOUD_ORGANIZATION: TheWinterShadow
   TF_API_TOKEN: "${{ secrets.TFC_API_TOKEN }}"
   TF_WORKSPACE: obsidian-palace
-  CONFIG_DIRECTORY: terraform/environments/prod
+  CONFIG_DIRECTORY: .
 
   GCP_PROJECT_ID: obsidianpalace
   GCP_REGION: us-central1
