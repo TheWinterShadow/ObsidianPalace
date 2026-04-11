@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     allowed_email: str = ""
 
     # --- Server Identity ---
-    server_url: str = "https://lifeos.thewintershadow.com"
+    server_url: str = "https://localhost:8080"
 
     # --- Vault ---
     vault_path: Path = Path("/data/vault")

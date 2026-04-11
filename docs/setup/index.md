@@ -466,7 +466,7 @@ All configuration is via environment variables with the `OBSIDIAN_PALACE_` prefi
 | `OBSIDIAN_PALACE_GOOGLE_CLIENT_ID` | (required) | Google OAuth 2.0 client ID |
 | `OBSIDIAN_PALACE_GOOGLE_CLIENT_SECRET` | (required) | Google OAuth 2.0 client secret |
 | `OBSIDIAN_PALACE_ALLOWED_EMAIL` | (required) | Google account email allowed to access the server |
-| `OBSIDIAN_PALACE_SERVER_URL` | `https://lifeos.thewintershadow.com` | Public URL of your server (used for OAuth metadata) |
+| `OBSIDIAN_PALACE_SERVER_URL` | `https://YOUR_URL` | Public URL of your server (used for OAuth metadata) |
 | `OBSIDIAN_PALACE_VAULT_PATH` | `/data/vault` | Path to the Obsidian vault directory |
 | `OBSIDIAN_PALACE_CHROMADB_PATH` | `/data/chromadb` | Path to the ChromaDB storage directory |
 | `OBSIDIAN_PALACE_ANTHROPIC_API_KEY` | (empty) | Anthropic API key for AI placement |

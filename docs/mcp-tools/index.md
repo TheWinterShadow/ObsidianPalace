@@ -13,8 +13,8 @@ ObsidianPalace exposes five tools via the Model Context Protocol. Any MCP-compat
 Connect to the MCP server at:
 
 ```
-SSE: https://lifeos.thewintershadow.com/mcp/sse
-Messages: https://lifeos.thewintershadow.com/mcp/messages/
+SSE: https://YOUR_URL/sse
+Messages: https://YOUR_URL/messages/
 ```
 
 All requests require a valid Google OAuth 2.0 Bearer token in the `Authorization` header.

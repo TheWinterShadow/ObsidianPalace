@@ -24,6 +24,11 @@ variable "zone" {
   default     = "us-central1-a"
 }
 
+variable "domain" {
+  description = "Domain name for the ObsidianPalace service (e.g. vault.yourdomain.com)."
+  type        = string
+}
+
 variable "container_image" {
   description = "Docker image URI for the ObsidianPalace container."
   type        = string

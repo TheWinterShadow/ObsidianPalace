@@ -5,7 +5,7 @@ module "obsidian_palace" {
   region     = var.region
   zone       = var.zone
 
-  domain = "lifeos.thewintershadow.com"
+  domain = var.domain
 
   container_image = var.container_image
 
@@ -24,7 +24,7 @@ module "obsidian_palace" {
 
 check "health" {
   data "http" "health" {
-    url = "https://lifeos.thewintershadow.com/health"
+    url = "https://${var.domain}/health"
 
     retry {
       attempts     = 3

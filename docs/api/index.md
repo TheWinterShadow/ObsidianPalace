@@ -14,9 +14,9 @@ When the server is running, interactive documentation is available at:
 
 | Format | URL | Description |
 |--------|-----|-------------|
-| **Swagger UI** | [`/docs`](https://lifeos.thewintershadow.com/docs){ target="_blank" } | Interactive API explorer with try-it-out |
-| **ReDoc** | [`/redoc`](https://lifeos.thewintershadow.com/redoc){ target="_blank" } | Clean, readable API reference |
-| **OpenAPI JSON** | [`/openapi.json`](https://lifeos.thewintershadow.com/openapi.json){ target="_blank" } | Raw OpenAPI 3.1 specification |
+| **Swagger UI** | `/docs` | Interactive API explorer with try-it-out |
+| **ReDoc** | `/redoc` | Clean, readable API reference |
+| **OpenAPI JSON** | `/openapi.json` | Raw OpenAPI 3.1 specification |
 
 ## REST Endpoints
 
@@ -32,7 +32,7 @@ When the server is running, interactive documentation is available at:
 ## Health Check
 
 ```bash
-curl https://lifeos.thewintershadow.com/health
+curl https://YOUR_URL/health
 ```
 
 ```json
@@ -48,7 +48,7 @@ The MCP endpoints require a Google OAuth 2.0 Bearer token:
 
 ```bash
 curl -H "Authorization: Bearer <token>" \
-  https://lifeos.thewintershadow.com/mcp/sse
+  https://YOUR_URL/mcp/sse
 ```
 
 The token is validated against Google's userinfo endpoint. Only the configured `allowed_email` is permitted access.

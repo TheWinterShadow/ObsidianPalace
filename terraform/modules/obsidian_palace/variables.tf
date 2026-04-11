@@ -33,7 +33,7 @@ variable "zone" {
 }
 
 variable "domain" {
-  description = "Domain name for the ObsidianPalace service (e.g. lifeos.thewintershadow.com)."
+  description = "Domain name for the ObsidianPalace service (e.g. vault.yourdomain.com)."
   type        = string
 
   validation {
