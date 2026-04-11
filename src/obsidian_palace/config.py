@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     allowed_email: str = ""
 
+    # --- Server Identity ---
+    server_url: str = "https://lifeos.thewintershadow.com"
+
     # --- Vault ---
     vault_path: Path = Path("/data/vault")
     chromadb_path: Path = Path("/data/chromadb")
