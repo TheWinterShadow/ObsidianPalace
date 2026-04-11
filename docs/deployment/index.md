@@ -1,136 +1,226 @@
 ---
-title: Deployment
-description: Deploy ObsidianPalace on GCE with Terraform.
+title: Operations
+description: Day-to-day operations, CI/CD, updating, monitoring, and maintenance.
 icon: material/rocket-launch
 ---
 
-# Deployment
+# Operations
 
-ObsidianPalace runs on a single GCE e2-small instance (~$15/month). The entire infrastructure is managed by Terraform with state stored in Terraform Cloud.
+This page covers day-to-day operations for a running ObsidianPalace instance. For initial setup, see the [Setup Guide](../setup/index.md).
 
-## Prerequisites
+---
 
-- A **GCP project** with billing enabled
-- **Terraform** >= 1.5 with a [Terraform Cloud](https://app.terraform.io/) account
-- A **Google OAuth 2.0** client ID and secret (for authentication)
-- An **Anthropic API key** (for AI-assisted note placement)
-- **Obsidian Sync** credentials (for vault synchronization)
-- A **domain** pointed at GCP Cloud DNS name servers
+## CI/CD Pipeline
 
-## Step 1: Obsidian Sync Credentials
+ObsidianPalace uses two GitHub Actions workflows that run in sequence:
 
-The `ob login` command is interactive and must be run once locally:
+### CI (`ci.yml`)
+
+Triggers on every push to `main` and on pull requests.
+
+| Job | What it does |
+|-----|-------------|
+| **Lint** | Runs `ruff check` and `ruff format --check` |
+| **Test** | Runs `pytest tests/ -v` |
+| **Build & Push** | Builds the Docker image and pushes to Artifact Registry (main only) |
+
+The image is tagged with both the short SHA (e.g., `a1b2c3d`) and `latest`.
+
+### Deploy (`deploy.yml`)
+
+Triggers after CI completes on `main`, or on direct pushes to `terraform/`.
+
+1. Updates the `container_image` variable in Terraform Cloud to the new SHA tag
+2. Uploads the Terraform configuration
+3. Creates and applies a Terraform run
+4. Resets the GCE instance to pick up the new image
+
+### Required GitHub secrets
+
+| Secret | Description |
+|--------|-------------|
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Workload Identity Federation provider resource name |
+| `GCP_SERVICE_ACCOUNT` | GCP service account email for GitHub Actions |
+| `TFC_API_TOKEN` | Terraform Cloud API token |
+| `TFC_WORKSPACE_ID` | Terraform Cloud workspace ID |
+
+### Setting up Workload Identity Federation
+
+Follow the [GCP guide for GitHub Actions](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines#github-actions) to create a Workload Identity Pool and Provider. The service account needs:
+
+- `roles/artifactregistry.writer` (push images)
+- `roles/compute.instanceAdmin.v1` (reset instance)
+
+---
+
+## Manual Deployment
+
+If you prefer not to use CI/CD, or need to deploy a hotfix:
 
 ```bash
-# Install obsidian-headless
-npm install -g obsidian-headless
-
-# Login (interactive -- enter your Obsidian account credentials)
-ob login
-
-# The credential file is saved to ~/.config/obsidian-headless/
-# Base64-encode it for Secret Manager
-base64 < ~/.config/obsidian-headless/credentials.json
-```
-
-Save the base64-encoded output -- you'll set it as a Terraform Cloud variable.
-
-## Step 2: Docker Image
-
-Build and push the container image to GCP Artifact Registry. The Artifact Registry repository is provisioned by Terraform, so run `terraform apply` first (Step 4), then come back to push the image:
-
-```bash
-# Authenticate Docker to Artifact Registry
-gcloud auth configure-docker us-central1-docker.pkg.dev
-
 # Build and push
-docker build -t us-central1-docker.pkg.dev/obsidianpalace/obsidian-palace/obsidian-palace:latest .
-docker push us-central1-docker.pkg.dev/obsidianpalace/obsidian-palace/obsidian-palace:latest
+docker build -t us-central1-docker.pkg.dev/YOUR_PROJECT_ID/obsidian-palace/obsidian-palace:latest .
+gcloud auth configure-docker us-central1-docker.pkg.dev
+docker push us-central1-docker.pkg.dev/YOUR_PROJECT_ID/obsidian-palace/obsidian-palace:latest
+
+# Reset the instance to pull the new image
+gcloud compute instances reset obsidian-palace \
+  --zone=us-central1-a \
+  --project=YOUR_PROJECT_ID
 ```
 
-Alternatively, push to `main` and let the CI workflow build and push automatically.
+The startup script on the VM automatically pulls the configured image and restarts the container.
 
-## Step 3: Terraform Cloud Variables
+---
 
-Create the workspace `obsidian-palace` in org `TheWinterShadow` on [Terraform Cloud](https://app.terraform.io/) and set these workspace variables:
+## Monitoring
 
-| Variable | Category | Sensitive | Description |
-|----------|----------|-----------|-------------|
-| `container_image` | Terraform | No | Full image URI (e.g., `us-central1-docker.pkg.dev/obsidianpalace/obsidian-palace/server:latest`) |
-| `google_oauth_client_id` | Terraform | Yes | Google OAuth 2.0 client ID |
-| `google_oauth_client_secret` | Terraform | Yes | Google OAuth 2.0 client secret |
-| `allowed_email` | Terraform | Yes | Your Google account email |
-| `anthropic_api_key` | Terraform | Yes | Anthropic API key |
-| `obsidian_sync_credentials` | Terraform | Yes | Base64-encoded Obsidian Sync credential file |
+### Health check
 
-Optional variables:
+```bash
+curl https://YOUR_DOMAIN/health
+# {"status":"ok","version":"0.1.0"}
+```
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `allowed_ssh_cidrs` | `[]` | CIDR blocks for SSH access (e.g., `["1.2.3.4/32"]`) |
-| `allowed_https_cidrs` | `[]` | Additional HTTPS CIDR restrictions (empty = allow all, rely on OAuth) |
+### Container logs
 
-## Step 4: Deploy
+```bash
+# SSH into the instance
+gcloud compute ssh obsidian-palace --zone=us-central1-a --project=YOUR_PROJECT_ID
+
+# View all container logs
+docker logs obsidian-palace --tail 100 -f
+
+# View per-process logs via supervisord
+docker exec obsidian-palace supervisorctl tail -f mcp-server
+docker exec obsidian-palace supervisorctl tail -f obsidian-sync
+docker exec obsidian-palace supervisorctl tail -f nginx
+```
+
+### Process status
+
+```bash
+docker exec obsidian-palace supervisorctl status
+# Expected output:
+# mcp-server       RUNNING   pid 42, uptime 1:23:45
+# nginx            RUNNING   pid 12, uptime 1:23:45
+# obsidian-sync    RUNNING   pid 37, uptime 1:23:45
+```
+
+---
+
+## SSL Certificate Renewal
+
+Let's Encrypt certificates expire every 90 days. The startup script writes a renewal script to the data disk, but you need to schedule it.
+
+### Manual renewal
+
+```bash
+# SSH into the instance
+gcloud compute ssh obsidian-palace --zone=us-central1-a --project=YOUR_PROJECT_ID
+
+# Run the certbot renewal
+bash /mnt/disks/data/certbot-renew.sh
+```
+
+### Automated renewal via cron
+
+On Container-Optimized OS, the root filesystem is read-only. Use `systemd-run` to schedule a recurring timer:
+
+```bash
+# SSH into the instance, then:
+sudo systemd-run --on-calendar="*-*-01,15 03:00:00" \
+  --unit=certbot-renew \
+  /bin/bash /mnt/disks/data/certbot-renew.sh
+```
+
+This runs certbot on the 1st and 15th of each month at 3 AM.
+
+---
+
+## Updating Obsidian Sync Credentials
+
+If your Obsidian Sync session expires or you change your Obsidian account password:
+
+```bash
+# SSH into the instance
+gcloud compute ssh obsidian-palace --zone=us-central1-a --project=YOUR_PROJECT_ID
+
+# Re-authenticate inside the container
+docker exec -it obsidian-palace ob login
+
+# Restart the container to pick up new credentials
+docker restart obsidian-palace
+```
+
+The new auth token is written to the persistent disk and survives container restarts.
+
+---
+
+## Terraform State
+
+State is stored in Terraform Cloud (free tier). To inspect or modify:
 
 ```bash
 cd terraform/environments/prod
-terraform init
-terraform plan
-terraform apply
+
+# Show current state
+terraform show
+
+# Import an existing resource
+terraform import 'module.obsidian_palace.google_compute_instance.obsidian_palace' \
+  'projects/YOUR_PROJECT_ID/zones/us-central1-a/instances/obsidian-palace'
 ```
 
-## Step 5: DNS Configuration
+### Switching to GCS backend
 
-After the first `terraform apply`, the output includes `dns_name_servers`. Update your domain registrar's NS records to point at these name servers:
+If you prefer storing state in a GCS bucket instead of Terraform Cloud, uncomment the GCS backend in `backend.tf` and remove the `cloud {}` block from `versions.tf`:
+
+```hcl title="backend.tf"
+terraform {
+  backend "gcs" {
+    bucket = "your-tfstate-bucket"
+    prefix = "obsidian_palace/state"
+  }
+}
+```
+
+---
+
+## Backup and Recovery
+
+### What's on the persistent disk
+
+| Path | Contents | Recreatable? |
+|------|----------|-------------|
+| `/mnt/disks/data/vault/` | Your Obsidian vault files | Yes -- re-synced from Obsidian Sync |
+| `/mnt/disks/data/chromadb/` | Semantic search index | Yes -- rebuilt on startup |
+| `/mnt/disks/data/obsidian-config/` | `ob` CLI auth token | No -- requires `ob login` |
+| `/mnt/disks/data/letsencrypt/` | SSL certificates | Yes -- re-issued by certbot |
+
+### Creating a disk snapshot
 
 ```bash
-terraform output dns_name_servers
+gcloud compute disks snapshot obsidian-palace-data \
+  --zone=us-central1-a \
+  --project=YOUR_PROJECT_ID \
+  --snapshot-names=obsidian-palace-backup-$(date +%Y%m%d)
 ```
 
-!!! note "DNS propagation"
-    NS record changes can take up to 48 hours to propagate, though they typically complete within a few hours.
+### Recovery from snapshot
 
-## Step 6: Verify
-
-Once DNS propagates and Let's Encrypt issues a certificate (handled automatically by the startup script):
+If the data disk is lost, create a new disk from the snapshot and attach it:
 
 ```bash
-# Health check
-curl https://lifeos.thewintershadow.com/health
-
-# Expected response:
-# {"status": "ok", "version": "0.1.0"}
+gcloud compute disks create obsidian-palace-data \
+  --zone=us-central1-a \
+  --source-snapshot=obsidian-palace-backup-YYYYMMDD \
+  --project=YOUR_PROJECT_ID
 ```
 
-The Swagger API docs are available at:
+Then run `terraform apply` to reconcile state.
 
-- **Swagger UI**: `https://lifeos.thewintershadow.com/docs`
-- **ReDoc**: `https://lifeos.thewintershadow.com/redoc`
-- **OpenAPI JSON**: `https://lifeos.thewintershadow.com/openapi.json`
-
-## Infrastructure Overview
-
-```mermaid
-flowchart TD
-    subgraph GCP ["GCP Project: obsidianpalace"]
-        IP["Static IP"]
-        FW["Firewall Rules"]
-        GCE["GCE e2-small"]
-        DISK["Persistent Disk (20 GB)"]
-        SM["Secret Manager (5 secrets)"]
-        DNS["Cloud DNS"]
-        AR["Artifact Registry"]
-
-        DNS -->|"A record"| IP
-        IP --> GCE
-        FW -->|"443, 80"| GCE
-        GCE -->|"Attached"| DISK
-        GCE -->|"Reads secrets"| SM
-        GCE -->|"Pulls image"| AR
-    end
-
-    CERT["Let's Encrypt"] -->|"ACME challenge"| GCE
-```
+---
 
 ## Cost Estimate
 
@@ -139,6 +229,9 @@ flowchart TD
 | GCE e2-small (always-on) | ~$13.00 |
 | Persistent disk (20 GB pd-standard) | ~$0.80 |
 | Static IP (in use) | ~$0.00 |
-| Cloud DNS (managed zone) | ~$0.20 |
-| Secret Manager (5 secrets) | ~$0.00 |
+| Secret Manager (4 secrets) | ~$0.00 |
+| Artifact Registry (storage) | ~$0.10 |
 | **Total** | **~$14.00** |
+
+!!! tip "Cost optimization"
+    If you don't need the server running 24/7, you can stop the instance when not in use. A stopped e2-small costs ~$0 for compute (you still pay for the disk and static IP).
