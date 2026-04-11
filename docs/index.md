@@ -45,6 +45,12 @@ hide:
 
     Google OAuth 2.0 authentication. Single-user system locked to one Google account. All secrets in GCP Secret Manager.
 
+-   :material-server-network: **Deploy your own**
+
+    ---
+
+    Full setup guide to deploy your own instance on GCE with Terraform. ~$15/month, all infrastructure as code.
+
 </div>
 
 ---
@@ -117,13 +123,17 @@ See the [MCP Tools](mcp-tools/index.md) page for detailed schemas and examples.
 
     System design, components, and data flow.
 
--   [**:material-tools: MCP Tools**](mcp-tools/index.md){ .md-button .md-button--primary }
+-   [**:material-clipboard-check-outline: Setup Guide**](setup/index.md){ .md-button .md-button--primary }
+
+    Deploy your own instance on GCE with Terraform.
+
+-   [**:material-tools: MCP Tools**](mcp-tools/index.md){ .md-button }
 
     Detailed reference for all five MCP tools.
 
--   [**:material-rocket-launch: Deployment**](deployment/index.md){ .md-button }
+-   [**:material-rocket-launch: Operations**](deployment/index.md){ .md-button }
 
-    Deploy your own instance on GCE with Terraform.
+    CI/CD, monitoring, maintenance, and troubleshooting.
 
 -   [**:material-code-tags: API Reference**](api/index.md){ .md-button }
 
