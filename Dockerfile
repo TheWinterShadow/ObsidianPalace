@@ -1,5 +1,5 @@
 # ObsidianPalace — production image.
-# Single container: Node.js (obsidian-headless sync) + Python (MCP server).
+# Single container: nginx (SSL) + Node.js (obsidian-headless sync) + Python (MCP server).
 # Managed by supervisord.
 
 # --- Stage 1: Node.js layer (obsidian-headless CLI) ---
@@ -17,9 +17,11 @@ COPY --from=node-layer /usr/local/bin/npm /usr/local/bin/npm
 # Symlink the ob CLI
 RUN ln -s /usr/local/lib/node_modules/obsidian-headless/bin/ob.js /usr/local/bin/ob
 
-# System dependencies
+# System dependencies — supervisor + nginx for SSL termination
 RUN apt-get update && apt-get install -y --no-install-recommends \
     supervisor \
+    nginx \
+    findutils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -32,13 +34,21 @@ RUN pip install --no-cache-dir .
 # Supervisord config
 COPY supervisord.conf /etc/supervisor/conf.d/obsidian-palace.conf
 
+# Nginx config
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Data directories (mounted as persistent disk in production)
-RUN mkdir -p /data/vault /data/chromadb
+RUN mkdir -p /data/vault /data/chromadb /var/www/certbot
 
-EXPOSE 8080
+# Ports: 80 (HTTP/ACME), 443 (HTTPS), 8080 (internal uvicorn)
+EXPOSE 80 443
 
-# Health check for GCE instance group
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+# Health check targets nginx → uvicorn
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD python -c "import httpx; r = httpx.get('http://localhost:8080/health'); r.raise_for_status()"
 
-CMD ["supervisord", "-n", "-c", "/etc/supervisor/conf.d/obsidian-palace.conf"]
+ENTRYPOINT ["/app/entrypoint.sh"]
