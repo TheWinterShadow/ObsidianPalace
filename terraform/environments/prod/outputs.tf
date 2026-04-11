@@ -22,3 +22,8 @@ output "service_account_email" {
   description = "Email of the ObsidianPalace service account."
   value       = module.obsidian_palace.service_account_email
 }
+
+output "artifact_registry_url" {
+  description = "Base URL for pushing Docker images to Artifact Registry."
+  value       = module.obsidian_palace.artifact_registry_url
+}

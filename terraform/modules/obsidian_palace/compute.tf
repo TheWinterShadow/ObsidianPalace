@@ -55,6 +55,8 @@ locals {
     #!/bin/bash
     set -euo pipefail
 
+    log() { echo "[startup] $(date -u '+%Y-%m-%dT%H:%M:%SZ') $*"; }
+
     # --- Mount persistent disk ---
     DATA_DIR="/mnt/data"
     DEVICE="/dev/disk/by-id/google-obsidian-palace-data"
@@ -63,17 +65,23 @@ locals {
 
     # Format only if not already formatted.
     if ! blkid "$DEVICE" > /dev/null 2>&1; then
+      log "Formatting persistent disk"
       mkfs.ext4 -m 0 -F -E lazy_itable_init=0,lazy_journal_init=0 "$DEVICE"
     fi
 
     mount -o discard,defaults "$DEVICE" "$DATA_DIR"
-    mkdir -p "$DATA_DIR/vault" "$DATA_DIR/chromadb"
+    mkdir -p "$DATA_DIR/vault" "$DATA_DIR/chromadb" "$DATA_DIR/obsidian-config"
+    mkdir -p "$DATA_DIR/letsencrypt" "$DATA_DIR/certbot-webroot"
 
     # --- Pull secrets from Secret Manager ---
+    # COS has gcloud pre-installed via the metadata agent.
     fetch_secret() {
-      gcloud secrets versions access latest --secret="$1" --project="${var.project_id}" 2>/dev/null
+      /usr/share/google/toolbox -c \
+        "gcloud secrets versions access latest --secret=$1 --project=${var.project_id}" 2>/dev/null \
+        || gcloud secrets versions access latest --secret="$1" --project="${var.project_id}" 2>/dev/null
     }
 
+    log "Fetching secrets from Secret Manager"
     OAUTH_CLIENT_ID=$(fetch_secret "obsidian-palace-google-oauth-client-id")
     OAUTH_CLIENT_SECRET=$(fetch_secret "obsidian-palace-google-oauth-client-secret")
     ALLOWED_EMAIL=$(fetch_secret "obsidian-palace-allowed-email")
@@ -81,33 +89,61 @@ locals {
     OBSIDIAN_SYNC_CREDS=$(fetch_secret "obsidian-palace-obsidian-sync-credentials")
 
     # --- Write Obsidian Sync credentials ---
-    SYNC_CREDS_DIR="$DATA_DIR/obsidian-config"
-    mkdir -p "$SYNC_CREDS_DIR"
-    echo "$OBSIDIAN_SYNC_CREDS" | base64 -d > "$SYNC_CREDS_DIR/obsidian-creds.json"
+    # obsidian-headless reads ~/.obsidian-headless/auth_token (plain text).
+    echo "$OBSIDIAN_SYNC_CREDS" | base64 -d > "$DATA_DIR/obsidian-config/auth_token"
+    chmod 600 "$DATA_DIR/obsidian-config/auth_token"
+    log "Obsidian Sync credentials written"
 
-    # --- Install and configure certbot for SSL ---
-    if [ ! -f "/etc/letsencrypt/live/${var.domain}/fullchain.pem" ]; then
-      apt-get update -qq && apt-get install -y -qq certbot
-      certbot certonly --standalone --non-interactive --agree-tos \
-        --email "$ALLOWED_EMAIL" \
-        -d "${var.domain}"
+    # --- SSL certificate via certbot (runs in Docker on COS) ---
+    CERT_DIR="$DATA_DIR/letsencrypt"
+
+    if [ ! -f "$CERT_DIR/live/${var.domain}/fullchain.pem" ]; then
+      log "Obtaining SSL certificate for ${var.domain} via certbot"
+      docker run --rm \
+        -v "$CERT_DIR:/etc/letsencrypt" \
+        -v "$DATA_DIR/certbot-webroot:/var/www/certbot" \
+        -p 80:80 \
+        certbot/certbot certonly \
+          --standalone \
+          --non-interactive \
+          --agree-tos \
+          --email "$ALLOWED_EMAIL" \
+          -d "${var.domain}"
+      log "SSL certificate obtained"
+    else
+      log "SSL certificate already exists — skipping certbot"
+    fi
+
+    # Symlink certs to a stable path the container expects.
+    # The nginx.conf references /etc/letsencrypt/live/certs/*.pem
+    mkdir -p "$CERT_DIR/live/certs"
+    if [ -d "$CERT_DIR/live/${var.domain}" ]; then
+      ln -sf "$CERT_DIR/live/${var.domain}/fullchain.pem" "$CERT_DIR/live/certs/fullchain.pem"
+      ln -sf "$CERT_DIR/live/${var.domain}/privkey.pem" "$CERT_DIR/live/certs/privkey.pem"
     fi
 
     # --- Configure Docker auth for Artifact Registry ---
-    gcloud auth configure-docker ${var.region}-docker.pkg.dev --quiet
+    docker-credential-gcr configure-docker --registries=${var.region}-docker.pkg.dev 2>/dev/null \
+      || true
 
-    # --- Run the container ---
+    # --- Stop and remove any existing container ---
+    docker rm -f obsidian-palace 2>/dev/null || true
+
+    # --- Pull and run the container ---
+    log "Pulling container image: ${var.container_image}"
     docker pull ${var.container_image}
 
+    log "Starting ObsidianPalace container"
     docker run -d \
       --name obsidian-palace \
       --restart unless-stopped \
-      -p 443:8080 \
-      -p 80:8080 \
+      -p 443:443 \
+      -p 80:80 \
       -v "$DATA_DIR/vault:/data/vault" \
       -v "$DATA_DIR/chromadb:/data/chromadb" \
-      -v "$SYNC_CREDS_DIR:/data/obsidian-config:ro" \
-      -v "/etc/letsencrypt:/etc/letsencrypt:ro" \
+      -v "$DATA_DIR/obsidian-config:/data/obsidian-config:ro" \
+      -v "$CERT_DIR:/etc/letsencrypt:ro" \
+      -v "$DATA_DIR/certbot-webroot:/var/www/certbot" \
       -e OBSIDIAN_PALACE_GOOGLE_CLIENT_ID="$OAUTH_CLIENT_ID" \
       -e OBSIDIAN_PALACE_GOOGLE_CLIENT_SECRET="$OAUTH_CLIENT_SECRET" \
       -e OBSIDIAN_PALACE_ALLOWED_EMAIL="$ALLOWED_EMAIL" \
@@ -118,9 +154,22 @@ locals {
       -e OBSIDIAN_PALACE_PORT="8080" \
       ${var.container_image}
 
-    # --- Certbot auto-renewal cron ---
-    echo "0 3 * * * certbot renew --quiet --deploy-hook 'docker restart obsidian-palace'" \
-      | crontab -
+    log "Container started"
+
+    # --- Certbot auto-renewal via cron (runs certbot in Docker) ---
+    cat > /etc/cron.daily/certbot-renew <<'CRON'
+    #!/bin/bash
+    # Stop nginx in the container to free port 80 for certbot standalone.
+    docker exec obsidian-palace supervisorctl stop nginx 2>/dev/null || true
+    docker run --rm \
+      -v /mnt/data/letsencrypt:/etc/letsencrypt \
+      -p 80:80 \
+      certbot/certbot renew --quiet
+    docker exec obsidian-palace supervisorctl start nginx 2>/dev/null || true
+    CRON
+    chmod +x /etc/cron.daily/certbot-renew
+
+    log "Startup complete"
   SCRIPT
 }
 

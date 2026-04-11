@@ -27,3 +27,8 @@ output "data_disk_name" {
   description = "Name of the persistent data disk."
   value       = google_compute_disk.data.name
 }
+
+output "artifact_registry_url" {
+  description = "Base URL for the Artifact Registry Docker repository."
+  value       = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.obsidian_palace.repository_id}"
+}
