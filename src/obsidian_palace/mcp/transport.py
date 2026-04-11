@@ -16,7 +16,7 @@ from obsidian_palace.mcp.server import server
 
 logger = logging.getLogger(__name__)
 
-sse_transport = SseServerTransport("/mcp/messages/")
+sse_transport = SseServerTransport("/messages/")
 
 
 async def handle_sse(request: Request) -> Response:
