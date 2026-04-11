@@ -114,14 +114,15 @@ A Node.js process running `ob sync --continuous` from the `obsidian-headless` CL
 
 ## Process Management
 
-Both processes run inside a single container managed by **supervisord**:
+Three processes run inside a single container managed by **supervisord**:
 
 | Process | Command | Role |
 |---------|---------|------|
-| `ob-sync` | `ob sync --continuous` | Keeps vault in sync with Obsidian Sync |
+| `nginx` | `nginx -g "daemon off;"` | SSL termination + reverse proxy (443 → 8080) |
+| `obsidian-sync` | `ob sync --continuous` | Keeps vault in sync with Obsidian Sync |
 | `mcp-server` | `uvicorn obsidian_palace.app:app` | Serves MCP tools over SSE |
 
-Supervisord ensures both processes restart on failure and logs are captured.
+An `entrypoint.sh` script runs before supervisord to inject Obsidian Sync credentials and wait for the initial vault sync to pull at least one file. Supervisord ensures all three processes restart on failure and logs are captured.
 
 ## Data Flow
 

@@ -29,6 +29,7 @@ terraform/
         ├── network.tf      # Static IP, firewall rules
         ├── compute.tf      # Service account, persistent disk, GCE instance
         ├── dns.tf          # Cloud DNS managed zone + A record
+        ├── registry.tf     # Artifact Registry Docker repository
         └── outputs.tf      # Module outputs
 ```
 
@@ -81,6 +82,13 @@ Five secrets are created, each with IAM bindings granting the GCE service accoun
 | **Managed Zone** | `thewintershadow-com` for `thewintershadow.com.` |
 | **A Record** | `lifeos.thewintershadow.com` pointing to static IP |
 
+### Artifact Registry
+
+| Resource | Configuration |
+|----------|---------------|
+| **Repository** | `obsidian-palace` (Docker format) in `us-central1` |
+| **Cleanup** | Keeps the 5 most recent tagged images |
+
 ## Post-Deploy Health Check
 
 The root module includes a `check {}` block that validates the service is reachable after deployment:
@@ -104,12 +112,13 @@ check "health" {
 
 ## Startup Sequence
 
-The GCE instance runs a startup script that:
+The GCE instance runs a startup script (COS-compatible — no `apt-get`) that:
 
 1. **Mounts the persistent disk** at `/mnt/data` (formats on first boot)
-2. **Creates data directories** (`/mnt/data/vault`, `/mnt/data/chromadb`)
+2. **Creates data directories** (`vault`, `chromadb`, `obsidian-config`, `letsencrypt`)
 3. **Pulls secrets** from Secret Manager via `gcloud`
 4. **Writes Obsidian Sync credentials** (base64-decoded) to disk
-5. **Runs certbot** for Let's Encrypt SSL (first boot only)
-6. **Pulls and starts** the Docker container with all env vars and volume mounts
-7. **Installs a cron job** for automatic certificate renewal
+5. **Runs certbot in Docker** for Let's Encrypt SSL (first boot only)
+6. **Symlinks certificates** to a stable path the container's nginx config expects
+7. **Pulls and starts** the Docker container with all env vars and volume mounts
+8. **Installs a cron job** for automatic certificate renewal (also runs certbot in Docker)

@@ -37,22 +37,18 @@ Save the base64-encoded output -- you'll set it as a Terraform Cloud variable.
 
 ## Step 2: Docker Image
 
-Build and push the container image to GCP Artifact Registry:
+Build and push the container image to GCP Artifact Registry. The Artifact Registry repository is provisioned by Terraform, so run `terraform apply` first (Step 4), then come back to push the image:
 
 ```bash
 # Authenticate Docker to Artifact Registry
 gcloud auth configure-docker us-central1-docker.pkg.dev
 
-# Create the repository (first time only)
-gcloud artifacts repositories create obsidian-palace \
-  --repository-format=docker \
-  --location=us-central1 \
-  --project=obsidianpalace
-
 # Build and push
-docker build -t us-central1-docker.pkg.dev/obsidianpalace/obsidian-palace/server:latest .
-docker push us-central1-docker.pkg.dev/obsidianpalace/obsidian-palace/server:latest
+docker build -t us-central1-docker.pkg.dev/obsidianpalace/obsidian-palace/obsidian-palace:latest .
+docker push us-central1-docker.pkg.dev/obsidianpalace/obsidian-palace/obsidian-palace:latest
 ```
+
+Alternatively, push to `main` and let the CI workflow build and push automatically.
 
 ## Step 3: Terraform Cloud Variables
 
