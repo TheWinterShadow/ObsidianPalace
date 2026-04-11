@@ -71,13 +71,21 @@ flowchart TD
 
 The entry point for all AI client connections. Implements the Model Context Protocol over Server-Sent Events, which is the transport required by Claude's Custom Connectors.
 
-- **Endpoint**: `/mcp/sse` -- SSE connection for MCP messages
-- **Endpoint**: `/mcp/messages/` -- POST endpoint for client-to-server messages
-- **Auth**: Every SSE connection is validated via Google OAuth 2.0 before the stream is established
+- **Endpoint**: `/sse` -- SSE connection for MCP messages
+- **Endpoint**: `/messages/` -- POST endpoint for client-to-server messages
+- **Auth**: MCP OAuth 2.1 authentication with PKCE (see below)
 
-### 2. OAuth 2.0 Authentication
+### 2. MCP OAuth 2.1 Authentication
 
-Single-user authentication using Google's OAuth 2.0 token validation. The server validates the Bearer token against Google's userinfo endpoint and checks that the email matches the configured allowed account.
+Implements the full [MCP OAuth 2.1 specification](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) with Google as the identity provider. The server acts as its own Authorization Server and delegates user authentication to Google.
+
+- **Discovery**: `/.well-known/oauth-protected-resource` (RFC 9728) and `/.well-known/oauth-authorization-server` (RFC 8414)
+- **Dynamic client registration**: `/register` -- MCP clients register automatically on first connection
+- **Authorization**: `/authorize` -- redirects to Google OAuth, then back to the server
+- **Token exchange**: `/token` -- issues access/refresh tokens after Google authentication
+- **Callback**: `/oauth2/callback` -- handles the Google OAuth redirect
+
+The server validates that the authenticated Google account matches the configured `allowed_email`. Only one user can access the system.
 
 ### 3. Vault Operations
 
@@ -171,8 +179,8 @@ sequenceDiagram
 | **Boot Disk** | 10 GB pd-standard, COS image | Container-Optimized OS |
 | **Data Disk** | 20 GB pd-standard | Vault files + ChromaDB index |
 | **Static IP** | Regional external IP | Stable DNS target |
-| **Cloud DNS** | A record for `lifeos.thewintershadow.com` | Domain routing |
-| **Secret Manager** | 5 secrets | OAuth, API keys, sync credentials |
+| **DNS** | A record at domain registrar | Points domain to static IP |
+| **Secret Manager** | 4 secrets | OAuth, API keys |
 | **SSL** | Let's Encrypt (certbot) | TLS termination |
 
 Estimated monthly cost: **~$15** (e2-small + persistent disk + static IP).
