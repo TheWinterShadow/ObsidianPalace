@@ -61,7 +61,7 @@ locals {
     log() { echo "[startup] $(date -u '+%Y-%m-%dT%H:%M:%SZ') $*"; }
 
     # --- Mount persistent disk ---
-    DATA_DIR="/mnt/data"
+    DATA_DIR="/mnt/disks/data"
     DEVICE="/dev/disk/by-id/google-obsidian-palace-data"
 
     mkdir -p "$DATA_DIR"
@@ -165,7 +165,7 @@ locals {
     # Stop nginx in the container to free port 80 for certbot standalone.
     docker exec obsidian-palace supervisorctl stop nginx 2>/dev/null || true
     docker run --rm \
-      -v /mnt/data/letsencrypt:/etc/letsencrypt \
+      -v /mnt/disks/data/letsencrypt:/etc/letsencrypt \
       -p 80:80 \
       certbot/certbot renew --quiet
     docker exec obsidian-palace supervisorctl start nginx 2>/dev/null || true
