@@ -1,5 +1,7 @@
 """FastAPI application — serves MCP over SSE and health endpoints."""
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -17,7 +19,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application startup and shutdown lifecycle.
 
-    Mounts MCP transport and logs startup configuration.
+    Mounts MCP transport, runs initial vault indexing, and starts
+    the file watcher for incremental re-indexing.
     """
     settings = get_settings()
     logger.info(
@@ -32,7 +35,41 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.router.routes.append(mcp_mount)
     logger.info("MCP SSE transport mounted at /mcp/sse")
 
+    # Start MemPalace indexing and file watcher
+    watcher_task: asyncio.Task | None = None
+
+    if settings.mempalace_enabled:
+        try:
+            from obsidian_palace.search.indexer import index_vault
+            from obsidian_palace.search.watcher import watch_vault
+
+            files, drawers = await index_vault()
+            logger.info(
+                "Initial vault indexing: %d files processed, %d drawers",
+                files,
+                drawers,
+            )
+
+            watcher_task = asyncio.create_task(watch_vault(), name="vault-watcher")
+            logger.info("Vault file watcher started")
+        except ImportError:
+            logger.warning(
+                "MemPalace not available (requires Python 3.12 + chromadb) "
+                "— search and indexing disabled"
+            )
+        except Exception:
+            logger.exception("Failed to start MemPalace indexing — search disabled")
+    else:
+        logger.info("MemPalace disabled via configuration")
+
     yield
+
+    # Shutdown: cancel watcher task
+    if watcher_task is not None:
+        watcher_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await watcher_task
+        logger.info("Vault file watcher stopped")
 
     logger.info("ObsidianPalace shutting down")
 

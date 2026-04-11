@@ -1,8 +1,10 @@
 """Tests for MCP server tool dispatch."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 from obsidian_palace.mcp.server import handle_call_tool, handle_list_tools
+from obsidian_palace.search.searcher import SearchResult
 
 
 class TestListTools:
@@ -64,10 +66,37 @@ class TestCallTool:
         assert "quick-note.md" in result[0].text
 
     async def test_search_vault_empty(self) -> None:
-        """Search returns empty until MemPalace is integrated."""
-        result = await handle_call_tool("search_vault", {"query": "test query"})
+        """Search returns empty when no results match."""
+        with patch("obsidian_palace.mcp.server.search", return_value=[]):
+            result = await handle_call_tool("search_vault", {"query": "test query"})
         assert len(result) == 1
         assert "No results" in result[0].text
+
+    async def test_search_vault_with_results(self) -> None:
+        """Search returns formatted results when matches are found."""
+        mock_results = [
+            SearchResult(
+                content="This is a note about Python testing best practices.",
+                source_path="Projects/python-testing.md",
+                score=0.92,
+                metadata={"wing": "obsidian", "room": "projects"},
+            ),
+            SearchResult(
+                content="Unit tests should be fast and isolated.",
+                source_path="Reference/testing-guide.md",
+                score=0.78,
+                metadata={"wing": "obsidian", "room": "reference"},
+            ),
+        ]
+
+        with patch("obsidian_palace.mcp.server.search", return_value=mock_results):
+            result = await handle_call_tool("search_vault", {"query": "testing"})
+
+        assert len(result) == 1
+        assert "Found 2 results" in result[0].text
+        assert "python-testing.md" in result[0].text
+        assert "0.920" in result[0].text
+        assert "testing-guide.md" in result[0].text
 
     async def test_call_tool_with_none_arguments(self) -> None:
         result = await handle_call_tool("list_folders", None)
