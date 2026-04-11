@@ -7,7 +7,10 @@ resource "google_service_account" "obsidian_palace" {
   account_id   = "obsidian-palace"
   display_name = "ObsidianPalace MCP Server"
 
-  depends_on = [google_project_service.compute]
+  depends_on = [
+    google_project_service.compute,
+    google_project_service.iam,
+  ]
 }
 
 # Allow the SA to pull from Artifact Registry.
