@@ -13,11 +13,6 @@ output "service_account_email" {
   value       = google_service_account.obsidian_palace.email
 }
 
-output "dns_name_servers" {
-  description = "Name servers for the managed DNS zone. Point your registrar here."
-  value       = google_dns_managed_zone.obsidian_palace.name_servers
-}
-
 output "service_url" {
   description = "HTTPS URL of the ObsidianPalace service."
   value       = "https://${var.domain}"

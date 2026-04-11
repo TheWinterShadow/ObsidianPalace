@@ -5,9 +5,7 @@ module "obsidian_palace" {
   region     = var.region
   zone       = var.zone
 
-  domain                    = "lifeos.thewintershadow.com"
-  dns_zone_name             = "thewintershadow-com"
-  dns_managed_zone_dns_name = "thewintershadow.com."
+  domain = "lifeos.thewintershadow.com"
 
   container_image = var.container_image
 

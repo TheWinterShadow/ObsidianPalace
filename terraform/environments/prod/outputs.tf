@@ -13,11 +13,6 @@ output "service_url" {
   value       = module.obsidian_palace.service_url
 }
 
-output "dns_name_servers" {
-  description = "Name servers for the DNS zone. Point your registrar NS records here."
-  value       = module.obsidian_palace.dns_name_servers
-}
-
 output "service_account_email" {
   description = "Email of the ObsidianPalace service account."
   value       = module.obsidian_palace.service_account_email

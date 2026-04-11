@@ -42,26 +42,6 @@ variable "domain" {
   }
 }
 
-variable "dns_zone_name" {
-  description = "Name of the Cloud DNS managed zone (must already exist or be created here)."
-  type        = string
-
-  validation {
-    condition     = length(var.dns_zone_name) > 0
-    error_message = "dns_zone_name must not be empty."
-  }
-}
-
-variable "dns_managed_zone_dns_name" {
-  description = "DNS name of the managed zone with trailing dot (e.g. thewintershadow.com.)."
-  type        = string
-
-  validation {
-    condition     = can(regex("\\.$", var.dns_managed_zone_dns_name))
-    error_message = "dns_managed_zone_dns_name must end with a trailing dot."
-  }
-}
-
 # --- Container ---
 
 variable "container_image" {
