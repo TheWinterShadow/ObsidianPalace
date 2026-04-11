@@ -77,11 +77,12 @@ locals {
     mkdir -p "$DATA_DIR/letsencrypt" "$DATA_DIR/certbot-webroot"
 
     # --- Pull secrets from Secret Manager ---
-    # COS has gcloud pre-installed via the metadata agent.
+    # COS has no gcloud on the host; use the cloud-sdk Docker image.
+    GCLOUD_IMAGE="gcr.io/google.com/cloudsdktool/google-cloud-cli:slim"
     fetch_secret() {
-      /usr/share/google/toolbox -c \
-        "gcloud secrets versions access latest --secret=$1 --project=${var.project_id}" 2>/dev/null \
-        || gcloud secrets versions access latest --secret="$1" --project="${var.project_id}" 2>/dev/null
+      docker run --rm "$GCLOUD_IMAGE" \
+        gcloud secrets versions access latest \
+          --secret="$1" --project="${var.project_id}"
     }
 
     log "Fetching secrets from Secret Manager"
@@ -119,22 +120,33 @@ locals {
 
     # Symlink certs to a stable path the container expects.
     # The nginx.conf references /etc/letsencrypt/live/certs/*.pem
+    # Use relative symlinks so they resolve inside the container too.
     mkdir -p "$CERT_DIR/live/certs"
     if [ -d "$CERT_DIR/live/${var.domain}" ]; then
-      ln -sf "$CERT_DIR/live/${var.domain}/fullchain.pem" "$CERT_DIR/live/certs/fullchain.pem"
-      ln -sf "$CERT_DIR/live/${var.domain}/privkey.pem" "$CERT_DIR/live/certs/privkey.pem"
+      cd "$CERT_DIR/live/certs"
+      ln -sf "../${var.domain}/fullchain.pem" fullchain.pem
+      ln -sf "../${var.domain}/privkey.pem" privkey.pem
+      cd /
     fi
 
     # --- Configure Docker auth for Artifact Registry ---
-    docker-credential-gcr configure-docker --registries=${var.region}-docker.pkg.dev 2>/dev/null \
-      || true
+    # COS root filesystem is read-only; write Docker config to the data disk.
+    DOCKER_CONFIG="$DATA_DIR/docker-config"
+    mkdir -p "$DOCKER_CONFIG"
+    cat > "$DOCKER_CONFIG/config.json" <<DOCKERCFG
+    {
+      "credHelpers": {
+        "${var.region}-docker.pkg.dev": "gcr"
+      }
+    }
+    DOCKERCFG
 
     # --- Stop and remove any existing container ---
     docker rm -f obsidian-palace 2>/dev/null || true
 
     # --- Pull and run the container ---
     log "Pulling container image: ${var.container_image}"
-    docker pull ${var.container_image}
+    docker --config "$DOCKER_CONFIG" pull ${var.container_image}
 
     log "Starting ObsidianPalace container"
     docker run -d \
@@ -159,8 +171,10 @@ locals {
 
     log "Container started"
 
-    # --- Certbot auto-renewal via cron (runs certbot in Docker) ---
-    cat > /etc/cron.daily/certbot-renew <<'CRON'
+    # --- Certbot auto-renewal ---
+    # COS root filesystem is read-only, so /etc/cron.daily is not writable.
+    # Write a renewal script to the data disk and schedule via systemd timer.
+    cat > "$DATA_DIR/certbot-renew.sh" <<'CRON'
     #!/bin/bash
     # Stop nginx in the container to free port 80 for certbot standalone.
     docker exec obsidian-palace supervisorctl stop nginx 2>/dev/null || true
@@ -170,7 +184,7 @@ locals {
       certbot/certbot renew --quiet
     docker exec obsidian-palace supervisorctl start nginx 2>/dev/null || true
     CRON
-    chmod +x /etc/cron.daily/certbot-renew
+    chmod +x "$DATA_DIR/certbot-renew.sh"
 
     log "Startup complete"
   SCRIPT
