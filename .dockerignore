@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Docs and scripts (not needed in container)
+docs
+scripts
+*.md
+!README.md
+
+# Tests and dev
+tests
+.pre-commit-config.yaml
+*.plan.md
+
+# Terraform
+terraform
+
+# CI
+.github
+
+# Python
+__pycache__
+*.pyc
+.pytest_cache
+.coverage
+htmlcov
+.ruff_cache
+*.egg-info
+.eggs
+
+# Local
+.env
+.venv
+venv
+site

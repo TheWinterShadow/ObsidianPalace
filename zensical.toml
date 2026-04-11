@@ -1,0 +1,166 @@
+# Zensical configuration for ObsidianPalace docs.
+
+[project]
+site_name = "ObsidianPalace"
+site_url = "https://thewintershadow.github.io/ObsidianPalace"
+site_description = "MCP server bridging Obsidian vaults with AI via semantic search and bidirectional sync."
+site_author = "TheWinterShadow"
+copyright = "Copyright &copy; 2026 TheWinterShadow &mdash; MIT License"
+docs_dir = "docs"
+site_dir = "site"
+
+repo_name = "TheWinterShadow/ObsidianPalace"
+repo_url = "https://github.com/TheWinterShadow/ObsidianPalace"
+edit_uri = "edit/main/docs/"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Architecture" = "architecture/index.md" },
+  { "MCP Tools" = "mcp-tools/index.md" },
+  { "Deployment" = "deployment/index.md" },
+  { "API Reference" = [
+    { "Swagger UI" = "api/index.md" },
+    { "Application" = "api/app.md" },
+    { "Configuration" = "api/config.md" },
+    { "Auth" = [
+      { "OAuth" = "api/auth/oauth.md" }
+    ]},
+    { "MCP" = [
+      { "Server" = "api/mcp/server.md" },
+      { "Transport" = "api/mcp/transport.md" }
+    ]},
+    { "Vault" = [
+      { "Operations" = "api/vault/operations.md" },
+      { "Placement" = "api/vault/placement.md" }
+    ]},
+    { "Search" = [
+      { "Searcher" = "api/search/searcher.md" },
+      { "Watcher" = "api/search/watcher.md" }
+    ]}
+  ]},
+  { "Infrastructure" = "infrastructure/index.md" }
+]
+
+# -- Markdown extensions -------------------------------------------------------
+
+[project.markdown_extensions.abbr]
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.def_list]
+[project.markdown_extensions.footnotes]
+[project.markdown_extensions.md_in_html]
+
+[project.markdown_extensions.toc]
+permalink = true
+
+[project.markdown_extensions.pymdownx.betterem]
+smart_enable = "all"
+
+[project.markdown_extensions.pymdownx.caret]
+[project.markdown_extensions.pymdownx.details]
+
+[project.markdown_extensions.pymdownx.emoji]
+emoji_generator = "zensical.extensions.emoji.to_svg"
+emoji_index     = "zensical.extensions.emoji.twemoji"
+
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums     = true
+line_spans          = "__span"
+pygments_lang_class = true
+
+[project.markdown_extensions.pymdownx.inlinehilite]
+[project.markdown_extensions.pymdownx.keys]
+[project.markdown_extensions.pymdownx.mark]
+[project.markdown_extensions.pymdownx.smartsymbols]
+[project.markdown_extensions.pymdownx.snippets]
+
+[project.markdown_extensions.pymdownx.superfences]
+custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+
+[project.markdown_extensions.pymdownx.tasklist]
+custom_checkbox = true
+
+[project.markdown_extensions.pymdownx.tilde]
+
+# -- Plugins -------------------------------------------------------------------
+
+[project.plugins.search]
+[project.plugins.autorefs]
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["src"]
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+show_source = false
+show_root_heading = true
+show_signature_annotations = true
+show_if_no_docstring = true
+members_order = "source"
+show_bases = false
+
+# -- Theme ---------------------------------------------------------------------
+
+[project.theme]
+name = "material"
+features = [
+  # Instant SPA navigation
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.instant.progress",
+  "navigation.tracking",
+  # Navigation layout
+  "navigation.tabs",
+  "navigation.tabs.sticky",
+  "navigation.path",
+  "navigation.indexes",
+  "navigation.top",
+  "navigation.footer",
+  # Search
+  "search.highlight",
+  "search.share",
+  "search.suggest",
+  # Code blocks
+  "content.code.annotate",
+  "content.code.copy",
+  "content.code.select",
+  # Tabs
+  "content.tabs.link",
+  # TOC
+  "toc.follow",
+]
+
+[project.theme.icon]
+logo = "material/book-open-page-variant"
+repo = "fontawesome/brands/github"
+edit = "lucide/pencil"
+view = "lucide/eye"
+
+# -- Color palettes (respects system preference) -------------------------------
+
+[[project.theme.palette]]
+media       = "(prefers-color-scheme: light)"
+scheme      = "default"
+primary     = "deep-purple"
+accent      = "deep-purple"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media       = "(prefers-color-scheme: dark)"
+scheme      = "slate"
+primary     = "deep-purple"
+accent      = "deep-purple"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+# -- Footer social links -------------------------------------------------------
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/TheWinterShadow/ObsidianPalace"
+name = "GitHub"
