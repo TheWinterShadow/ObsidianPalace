@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     vault_path: Path = Path("/data/vault")
     chromadb_path: Path = Path("/data/chromadb")
 
+    # --- MemPalace / Search ---
+    mempalace_wing: str = "obsidian"
+    mempalace_collection_name: str = "mempalace_drawers"
+    mempalace_enabled: bool = True
+
     # --- Obsidian Sync ---
     obsidian_sync_mode: str = "bidirectional"
 
