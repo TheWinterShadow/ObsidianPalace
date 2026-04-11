@@ -108,6 +108,8 @@ show_bases = false
 
 [project.theme]
 name = "material"
+logo = "assets/obsidian_palace.png"
+favicon = "assets/obsidian_palace.png"
 features = [
   # Instant SPA navigation
   "navigation.instant",
@@ -136,7 +138,6 @@ features = [
 ]
 
 [project.theme.icon]
-logo = "material/book-open-page-variant"
 repo = "fontawesome/brands/github"
 edit = "lucide/pencil"
 view = "lucide/eye"

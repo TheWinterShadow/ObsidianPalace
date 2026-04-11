@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="docs/assets/obsidian_palace.png" alt="ObsidianPalace" width="200">
+</div>
+
 # ObsidianPalace
 
 MCP server that gives AI clients (Claude Desktop, Claude Code, claude.ai) full read/write/search access to your Obsidian vault.

@@ -7,7 +7,11 @@ hide:
   - toc
 ---
 
-# ObsidianPalace :material-book-open-page-variant:
+<div align="center" markdown>
+
+![ObsidianPalace](assets/obsidian_palace.png){ width="200" }
+
+# ObsidianPalace
 
 **MCP server for Obsidian vaults** -- bidirectional sync, semantic search, and AI-assisted file placement, exposed over the Model Context Protocol.
 
@@ -16,6 +20,8 @@ hide:
 [![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=flat&logo=terraform&logoColor=white)](https://www.terraform.io/)
 [![MCP](https://img.shields.io/badge/MCP-SSE-purple.svg)](https://modelcontextprotocol.io/)
+
+</div>
 
 ---
 
