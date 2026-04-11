@@ -1,5 +1,5 @@
 ---
-title: ObsidianPalace
+title: Obsidian Palace
 description: MCP server bridging Obsidian vaults with AI via semantic search and bidirectional sync.
 icon: material/book-open-page-variant
 hide:
@@ -11,7 +11,7 @@ hide:
 
 ![ObsidianPalace](assets/obsidian_palace.png){ width="200" }
 
-# ObsidianPalace
+# Obsidian Palace
 
 **MCP server for Obsidian vaults** -- bidirectional sync, semantic search, and AI-assisted file placement, exposed over the Model Context Protocol.
 
