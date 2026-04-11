@@ -1,0 +1,102 @@
+# Deploy pipeline — update container image and trigger Terraform apply via TFC.
+# Triggers after CI completes on main, or on terraform/ changes directly.
+
+name: Deploy
+
+on:
+  # After CI pushes a new image
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+  # Direct terraform changes (no new image needed)
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+
+env:
+  TF_CLOUD_ORGANIZATION: TheWinterShadow
+  TF_API_TOKEN: "${{ secrets.TFC_API_TOKEN }}"
+  TF_WORKSPACE: obsidian-palace
+  CONFIG_DIRECTORY: terraform/environments/prod
+
+  GCP_PROJECT_ID: obsidianpalace
+  GCP_REGION: us-central1
+  AR_REPO: obsidian-palace
+  IMAGE_NAME: obsidian-palace
+
+jobs:
+  deploy:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update container_image variable
+        if: github.event_name == 'workflow_run'
+        env:
+          TFC_TOKEN: ${{ secrets.TFC_API_TOKEN }}
+          TFC_WORKSPACE_ID: ${{ secrets.TFC_WORKSPACE_ID }}
+        run: |
+          SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
+          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}"
+          echo "Updating container_image to: ${IMAGE}"
+
+          # Find the container_image variable ID
+          VAR_ID=$(curl -s \
+            --header "Authorization: Bearer ${TFC_TOKEN}" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/workspaces/${TFC_WORKSPACE_ID}/vars" \
+            | jq -r '.data[] | select(.attributes.key == "container_image") | .id')
+
+          if [ -z "$VAR_ID" ] || [ "$VAR_ID" = "null" ]; then
+            echo "::error::container_image variable not found in TFC workspace"
+            exit 1
+          fi
+
+          curl -sf \
+            --header "Authorization: Bearer ${TFC_TOKEN}" \
+            --header "Content-Type: application/vnd.api+json" \
+            --request PATCH \
+            "https://app.terraform.io/api/v2/workspaces/${TFC_WORKSPACE_ID}/vars/${VAR_ID}" \
+            --data "{
+              \"data\": {
+                \"id\": \"${VAR_ID}\",
+                \"type\": \"vars\",
+                \"attributes\": {
+                  \"value\": \"${IMAGE}\"
+                }
+              }
+            }"
+
+          echo "container_image updated to ${IMAGE}"
+
+      - name: Upload Terraform configuration
+        uses: hashicorp/tfc-workflows-github/actions/upload-configuration@v1.3.1
+        id: upload
+        with:
+          workspace: ${{ env.TF_WORKSPACE }}
+          directory: ${{ env.CONFIG_DIRECTORY }}
+
+      - name: Create Terraform run
+        uses: hashicorp/tfc-workflows-github/actions/create-run@v1.3.1
+        id: run
+        with:
+          workspace: ${{ env.TF_WORKSPACE }}
+          configuration_version: ${{ steps.upload.outputs.configuration_version_id }}
+
+      - name: Apply Terraform run
+        uses: hashicorp/tfc-workflows-github/actions/apply-run@v1.3.1
+        if: fromJSON(steps.run.outputs.payload).data.attributes.actions.IsConfirmable
+        with:
+          run: ${{ steps.run.outputs.run_id }}
+          comment: "Applied from GitHub Actions — ${{ github.sha }}"
