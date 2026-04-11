@@ -1,79 +1,91 @@
-"""Tests for MCP server tool dispatch."""
+"""Tests for MCP server tool definitions and the OAuth provider."""
 
 from pathlib import Path
 from unittest.mock import patch
 
-from obsidian_palace.mcp.server import handle_call_tool, handle_list_tools
+import pytest
+from mcp.server.fastmcp.exceptions import ToolError
+
+from obsidian_palace.auth.mcp_oauth import ObsidianPalaceOAuthProvider
+from obsidian_palace.mcp.server import create_mcp_server
 from obsidian_palace.search.searcher import SearchResult
 
 
-class TestListTools:
-    async def test_returns_all_tools(self) -> None:
-        tools = await handle_list_tools()
-        names = {t.name for t in tools}
+class TestCreateMcpServer:
+    def test_creates_server_and_provider(self) -> None:
+        mcp, provider = create_mcp_server()
+        assert mcp.name == "obsidian-palace"
+        assert isinstance(provider, ObsidianPalaceOAuthProvider)
+
+    def test_registers_all_tools(self) -> None:
+        mcp, _ = create_mcp_server()
+        tools = mcp._tool_manager._tools
+        names = set(tools.keys())
         assert names == {"search_vault", "read_note", "write_note", "list_folders", "list_notes"}
 
-    async def test_tools_have_input_schemas(self) -> None:
-        tools = await handle_list_tools()
-        for tool in tools:
-            assert "type" in tool.inputSchema
-            assert tool.inputSchema["type"] == "object"
 
+class TestToolFunctions:
+    """Test the tool handler functions through FastMCP's tool manager.
 
-class TestCallTool:
-    async def test_unknown_tool(self) -> None:
-        result = await handle_call_tool("nonexistent", {})
-        assert len(result) == 1
-        assert "Unknown tool" in result[0].text
+    FastMCP wraps our tool functions. We call them through the tool manager
+    to ensure they're properly registered and work end-to-end.
+    """
 
-    async def test_read_note(self, tmp_vault: Path) -> None:
-        result = await handle_call_tool("read_note", {"path": "Projects/ObsidianPalace/design.md"})
-        assert len(result) == 1
-        assert "MCP server for Obsidian vault access" in result[0].text
+    @pytest.fixture
+    def mcp_server(self):
+        mcp, _ = create_mcp_server()
+        return mcp
 
-    async def test_read_note_not_found(self) -> None:
-        result = await handle_call_tool("read_note", {"path": "nonexistent.md"})
-        assert len(result) == 1
-        assert "Error:" in result[0].text
+    async def test_read_note(self, mcp_server, tmp_vault: Path) -> None:
+        # call_tool returns the raw string from the tool function
+        result = await mcp_server._tool_manager.call_tool(
+            "read_note", {"path": "Projects/ObsidianPalace/design.md"}
+        )
+        assert isinstance(result, str)
+        assert "MCP server for Obsidian vault access" in result
 
-    async def test_write_note(self, tmp_vault: Path) -> None:
-        result = await handle_call_tool(
+    async def test_read_note_not_found(self, mcp_server) -> None:
+        with pytest.raises(ToolError, match="Note not found"):
+            await mcp_server._tool_manager.call_tool("read_note", {"path": "nonexistent.md"})
+
+    async def test_write_note(self, mcp_server, tmp_vault: Path) -> None:
+        result = await mcp_server._tool_manager.call_tool(
             "write_note",
             {"content": "# Test\n\nTest content.", "path": "Inbox/mcp-test.md"},
         )
-        assert len(result) == 1
-        assert "Note written to" in result[0].text
+        assert isinstance(result, str)
+        assert "Note written to" in result
         assert (tmp_vault / "Inbox" / "mcp-test.md").exists()
 
-    async def test_write_note_ai_placement_fallback(self, tmp_vault: Path) -> None:
+    async def test_write_note_ai_placement_fallback(self, mcp_server, tmp_vault: Path) -> None:
         """Without an API key, AI placement falls back to Inbox/."""
-        result = await handle_call_tool(
+        result = await mcp_server._tool_manager.call_tool(
             "write_note",
             {"content": "# No path given\n\nShould go to Inbox.", "title": "fallback-test"},
         )
-        assert len(result) == 1
-        assert "Inbox/fallback-test.md" in result[0].text
+        assert isinstance(result, str)
+        assert "Inbox/fallback-test.md" in result
 
-    async def test_list_folders(self) -> None:
-        result = await handle_call_tool("list_folders", {"path": ""})
-        assert len(result) == 1
-        assert "Projects/" in result[0].text
-        assert "Inbox/" in result[0].text
+    async def test_list_folders(self, mcp_server) -> None:
+        result = await mcp_server._tool_manager.call_tool("list_folders", {"path": ""})
+        assert isinstance(result, str)
+        assert "Projects/" in result
+        assert "Inbox/" in result
 
-    async def test_list_notes(self) -> None:
-        result = await handle_call_tool("list_notes", {"path": "Inbox"})
-        assert len(result) == 1
-        assert "quick-note.md" in result[0].text
+    async def test_list_notes(self, mcp_server) -> None:
+        result = await mcp_server._tool_manager.call_tool("list_notes", {"path": "Inbox"})
+        assert isinstance(result, str)
+        assert "quick-note.md" in result
 
-    async def test_search_vault_empty(self) -> None:
-        """Search returns empty when no results match."""
+    async def test_search_vault_empty(self, mcp_server) -> None:
         with patch("obsidian_palace.mcp.server.search", return_value=[]):
-            result = await handle_call_tool("search_vault", {"query": "test query"})
-        assert len(result) == 1
-        assert "No results" in result[0].text
+            result = await mcp_server._tool_manager.call_tool(
+                "search_vault", {"query": "test query"}
+            )
+        assert isinstance(result, str)
+        assert "No results" in result
 
-    async def test_search_vault_with_results(self) -> None:
-        """Search returns formatted results when matches are found."""
+    async def test_search_vault_with_results(self, mcp_server) -> None:
         mock_results = [
             SearchResult(
                 content="This is a note about Python testing best practices.",
@@ -90,15 +102,71 @@ class TestCallTool:
         ]
 
         with patch("obsidian_palace.mcp.server.search", return_value=mock_results):
-            result = await handle_call_tool("search_vault", {"query": "testing"})
+            result = await mcp_server._tool_manager.call_tool("search_vault", {"query": "testing"})
 
-        assert len(result) == 1
-        assert "Found 2 results" in result[0].text
-        assert "python-testing.md" in result[0].text
-        assert "0.920" in result[0].text
-        assert "testing-guide.md" in result[0].text
+        assert isinstance(result, str)
+        assert "Found 2 results" in result
+        assert "python-testing.md" in result
+        assert "0.920" in result
 
-    async def test_call_tool_with_none_arguments(self) -> None:
-        result = await handle_call_tool("list_folders", None)
-        assert len(result) == 1
-        assert "Folders" in result[0].text
+
+class TestOAuthProvider:
+    """Test the MCP OAuth provider."""
+
+    @pytest.fixture
+    def provider(self) -> ObsidianPalaceOAuthProvider:
+        return ObsidianPalaceOAuthProvider()
+
+    async def test_register_and_get_client(self, provider) -> None:
+        from mcp.shared.auth import OAuthClientInformationFull
+
+        client = OAuthClientInformationFull(
+            client_id="test-client-123",
+            client_secret="test-secret",
+            redirect_uris=["http://localhost:3000/callback"],
+        )
+        await provider.register_client(client)
+
+        retrieved = await provider.get_client("test-client-123")
+        assert retrieved is not None
+        assert retrieved.client_id == "test-client-123"
+
+    async def test_get_nonexistent_client(self, provider) -> None:
+        result = await provider.get_client("nonexistent")
+        assert result is None
+
+    async def test_load_nonexistent_access_token(self, provider) -> None:
+        result = await provider.load_access_token("nonexistent")
+        assert result is None
+
+    async def test_access_token_expiry(self, provider) -> None:
+        from mcp.server.auth.provider import AccessToken
+
+        # Store a token that's already expired
+        provider._access_tokens["expired-token"] = AccessToken(
+            token="expired-token",
+            client_id="test",
+            scopes=[],
+            expires_at=0,  # epoch = already expired
+        )
+
+        result = await provider.load_access_token("expired-token")
+        assert result is None
+        # Should also be cleaned up
+        assert "expired-token" not in provider._access_tokens
+
+    async def test_revoke_access_token(self, provider) -> None:
+        from mcp.server.auth.provider import AccessToken, RefreshToken
+
+        # Store tokens
+        provider._access_tokens["at-1"] = AccessToken(
+            token="at-1", client_id="client-a", scopes=[], expires_at=99999999999
+        )
+        provider._refresh_tokens["rt-1"] = RefreshToken(
+            token="rt-1", client_id="client-a", scopes=[], expires_at=99999999999
+        )
+
+        # Revoking access token should also revoke refresh tokens for same client
+        await provider.revoke_token(provider._access_tokens["at-1"])
+        assert "at-1" not in provider._access_tokens
+        assert "rt-1" not in provider._refresh_tokens

@@ -42,6 +42,7 @@ def test_settings(tmp_vault: Path, tmp_path: Path) -> Settings:
         allowed_email="test@example.com",
         google_client_id="test-client-id",
         google_client_secret="test-secret",
+        server_url="https://test.example.com",
         mempalace_enabled=True,
         mempalace_wing="obsidian",
         mempalace_collection_name="mempalace_drawers",
