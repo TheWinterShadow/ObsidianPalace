@@ -66,7 +66,7 @@ AI clients like Claude Desktop, Claude iOS, and claude.ai connect via the Model 
 
 ```mermaid
 flowchart LR
-    C["Claude Desktop / iOS / Web"] -->|"MCP over SSE"| S["ObsidianPalace Server"]
+    C["Claude(IOS, Web) / OpenCode / OpenAI / Etc"] -->|"MCP (SSE + HTTP)"| S["ObsidianPalace Server"]
     S -->|"Read / Write / Search"| V["Obsidian Vault"]
     S -->|"Semantic Index"| DB["ChromaDB"]
     OB["ob sync"] <-->|"Obsidian Sync"| V

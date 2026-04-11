@@ -1,7 +1,8 @@
-"""FastAPI application — serves MCP over SSE and health endpoints.
+"""FastAPI application — serves MCP over SSE + Streamable HTTP and health endpoints.
 
 The MCP server (with OAuth) runs as a Starlette sub-application mounted
-under the root. Health and docs endpoints are served by FastAPI directly.
+under the root, serving both SSE (``/sse``) and Streamable HTTP (``/mcp``)
+transports. Health and docs endpoints are served by FastAPI directly.
 """
 
 import asyncio
@@ -94,8 +95,8 @@ app = FastAPI(
     version=__version__,
     description=(
         "MCP server bridging Obsidian vaults with AI via semantic search "
-        "and bidirectional sync. Exposes vault tools over SSE transport "
-        "for Claude Desktop, Claude iOS, claude.ai, and other MCP clients."
+        "and bidirectional sync. Exposes vault tools over SSE and Streamable "
+        "HTTP transports for Claude Desktop, OpenCode, and other MCP clients."
     ),
     docs_url="/docs",
     redoc_url="/redoc",
@@ -111,7 +112,7 @@ async def health() -> dict[str, str]:
 
 
 # Mount the MCP Starlette app.
-# This handles: /sse, /messages/, /.well-known/oauth-*, /authorize,
-# /token, /register, /revoke, /oauth2/callback
+# This handles: /sse, /messages/ (SSE transport), /mcp (Streamable HTTP),
+# /.well-known/oauth-*, /authorize, /token, /register, /revoke, /oauth2/callback
 mcp_app = create_mcp_app()
 app.mount("/", mcp_app)
