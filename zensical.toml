@@ -37,7 +37,6 @@ nav = [
     ]},
     { "Vault" = [
       { "Operations" = "api/vault/operations.md" },
-      { "Placement" = "api/vault/placement.md" }
     ]},
     { "Search" = [
       { "Searcher" = "api/search/searcher.md" },
