@@ -142,6 +142,10 @@ locals {
     # --- Stop and remove any existing container ---
     docker rm -f obsidian-palace 2>/dev/null || true
 
+    # --- Prune old images to prevent boot disk exhaustion ---
+    log "Pruning unused Docker images"
+    docker system prune -af || true
+
     # --- Pull and run the container ---
     log "Pulling container image: ${var.container_image}"
     docker --config "$DOCKER_CONFIG" pull ${var.container_image}
