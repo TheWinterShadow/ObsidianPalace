@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     mempalace_collection_name: str = "mempalace_drawers"
     mempalace_enabled: bool = True
 
+    # --- OAuth State Persistence ---
+    oauth_state_path: Path = Path("/data/oauth_state.json")
+
     # --- Obsidian Sync ---
     obsidian_sync_mode: str = "bidirectional"
 

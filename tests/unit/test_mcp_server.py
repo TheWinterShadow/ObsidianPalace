@@ -1,10 +1,13 @@
 """Tests for MCP server tool definitions and the OAuth provider."""
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from mcp.server.auth.provider import AccessToken, RefreshToken
 from mcp.server.fastmcp.exceptions import ToolError
+from mcp.shared.auth import OAuthClientInformationFull
 
 from obsidian_palace.auth.mcp_oauth import ObsidianPalaceOAuthProvider
 from obsidian_palace.mcp.server import create_mcp_server
@@ -114,12 +117,10 @@ class TestOAuthProvider:
     """Test the MCP OAuth provider."""
 
     @pytest.fixture
-    def provider(self) -> ObsidianPalaceOAuthProvider:
-        return ObsidianPalaceOAuthProvider()
+    def provider(self, tmp_path: Path) -> ObsidianPalaceOAuthProvider:
+        return ObsidianPalaceOAuthProvider(state_file=tmp_path / "oauth_state.json")
 
     async def test_register_and_get_client(self, provider) -> None:
-        from mcp.shared.auth import OAuthClientInformationFull
-
         client = OAuthClientInformationFull(
             client_id="test-client-123",
             client_secret="test-secret",
@@ -140,8 +141,6 @@ class TestOAuthProvider:
         assert result is None
 
     async def test_access_token_expiry(self, provider) -> None:
-        from mcp.server.auth.provider import AccessToken
-
         # Store a token that's already expired
         provider._access_tokens["expired-token"] = AccessToken(
             token="expired-token",
@@ -156,8 +155,6 @@ class TestOAuthProvider:
         assert "expired-token" not in provider._access_tokens
 
     async def test_revoke_access_token(self, provider) -> None:
-        from mcp.server.auth.provider import AccessToken, RefreshToken
-
         # Store tokens
         provider._access_tokens["at-1"] = AccessToken(
             token="at-1", client_id="client-a", scopes=[], expires_at=99999999999
@@ -170,3 +167,97 @@ class TestOAuthProvider:
         await provider.revoke_token(provider._access_tokens["at-1"])
         assert "at-1" not in provider._access_tokens
         assert "rt-1" not in provider._refresh_tokens
+
+
+class TestOAuthPersistence:
+    """Test that OAuth state survives provider restarts (file-backed store)."""
+
+    async def test_registered_client_survives_restart(self, tmp_path: Path) -> None:
+        state_file = tmp_path / "oauth_state.json"
+
+        # Register a client, then create a new provider from the same file
+        provider1 = ObsidianPalaceOAuthProvider(state_file=state_file)
+        client = OAuthClientInformationFull(
+            client_id="persistent-client",
+            client_secret="secret",
+            redirect_uris=["http://localhost:3000/callback"],
+        )
+        await provider1.register_client(client)
+
+        # "Restart" — new provider instance loading from disk
+        provider2 = ObsidianPalaceOAuthProvider(state_file=state_file)
+        retrieved = await provider2.get_client("persistent-client")
+        assert retrieved is not None
+        assert retrieved.client_id == "persistent-client"
+
+    async def test_tokens_survive_restart(self, tmp_path: Path) -> None:
+        state_file = tmp_path / "oauth_state.json"
+
+        provider1 = ObsidianPalaceOAuthProvider(state_file=state_file)
+        provider1._access_tokens["survivor"] = AccessToken(
+            token="survivor",
+            client_id="test",
+            scopes=["vault:read"],
+            expires_at=99999999999,
+        )
+        provider1._refresh_tokens["refresh-survivor"] = RefreshToken(
+            token="refresh-survivor",
+            client_id="test",
+            scopes=["vault:read"],
+            expires_at=99999999999,
+        )
+        provider1._save_state()
+
+        # "Restart"
+        provider2 = ObsidianPalaceOAuthProvider(state_file=state_file)
+        at = await provider2.load_access_token("survivor")
+        assert at is not None
+        assert at.client_id == "test"
+
+        # Refresh token too
+        assert "refresh-survivor" in provider2._refresh_tokens
+
+    async def test_expired_tokens_pruned_on_load(self, tmp_path: Path) -> None:
+        state_file = tmp_path / "oauth_state.json"
+
+        provider1 = ObsidianPalaceOAuthProvider(state_file=state_file)
+        provider1._access_tokens["dead-token"] = AccessToken(
+            token="dead-token",
+            client_id="test",
+            scopes=[],
+            expires_at=0,  # already expired
+        )
+        provider1._save_state()
+
+        # "Restart" — expired token should be pruned
+        provider2 = ObsidianPalaceOAuthProvider(state_file=state_file)
+        assert "dead-token" not in provider2._access_tokens
+
+    async def test_corrupt_state_file_handled_gracefully(self, tmp_path: Path) -> None:
+        state_file = tmp_path / "oauth_state.json"
+        state_file.write_text("not valid json {{{")
+
+        # Should not raise, just start fresh
+        provider = ObsidianPalaceOAuthProvider(state_file=state_file)
+        assert len(provider._clients) == 0
+
+    async def test_missing_state_file_starts_fresh(self, tmp_path: Path) -> None:
+        state_file = tmp_path / "nonexistent" / "oauth_state.json"
+        provider = ObsidianPalaceOAuthProvider(state_file=state_file)
+        assert len(provider._clients) == 0
+
+    async def test_state_file_written_as_valid_json(self, tmp_path: Path) -> None:
+        state_file = tmp_path / "oauth_state.json"
+        provider = ObsidianPalaceOAuthProvider(state_file=state_file)
+
+        client = OAuthClientInformationFull(
+            client_id="json-check",
+            client_secret="secret",
+            redirect_uris=["http://localhost/cb"],
+        )
+        await provider.register_client(client)
+
+        # File should be valid JSON
+        data = json.loads(state_file.read_text())
+        assert "clients" in data
+        assert "json-check" in data["clients"]

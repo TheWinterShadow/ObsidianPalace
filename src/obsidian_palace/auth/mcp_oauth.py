@@ -5,6 +5,10 @@ Claude Code and other MCP clients authenticate through our server, which
 delegates actual user authentication to Google OAuth 2.0. Only Eli's
 personal Google account is allowed.
 
+All OAuth state (registered clients, pending authorizations, auth codes,
+access tokens, refresh tokens) is persisted to a JSON file on disk so
+that container restarts do not break active sessions.
+
 Flow:
     1. MCP client dynamically registers via /register
     2. Client redirects user to /authorize
@@ -15,9 +19,12 @@ Flow:
     7. Client exchanges code for our access/refresh tokens via /token
 """
 
+import json
 import logging
 import secrets
 import time
+from pathlib import Path
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
@@ -54,12 +61,14 @@ class ObsidianPalaceOAuthProvider(
     """OAuth provider that delegates authentication to Google.
 
     Single-user system: only the configured allowed_email can authenticate.
-    All state is kept in-memory (acceptable for a single-user, single-process server).
+    State is persisted to a JSON file so container restarts preserve active
+    sessions (registered clients, tokens, pending auth flows).
     """
 
-    def __init__(self) -> None:
-        # In-memory stores — single-user, single-process, so this is fine.
-        # On server restart, clients re-auth (which is expected behavior).
+    def __init__(self, state_file: Path | None = None) -> None:
+        self._state_file = state_file or get_settings().oauth_state_path
+
+        # In-memory stores — populated from disk on startup.
         self._clients: dict[str, OAuthClientInformationFull] = {}
         self._auth_codes: dict[str, AuthorizationCode] = {}
         self._access_tokens: dict[str, AccessToken] = {}
@@ -69,6 +78,118 @@ class ObsidianPalaceOAuthProvider(
         # (client_id, original AuthorizationParams) so we can complete
         # the flow when Google redirects back.
         self._pending_auths: dict[str, tuple[str, AuthorizationParams]] = {}
+
+        self._load_state()
+
+    # ------------------------------------------------------------------
+    # State persistence
+    # ------------------------------------------------------------------
+
+    def _load_state(self) -> None:
+        """Load persisted OAuth state from disk and prune expired entries."""
+        if not self._state_file.exists():
+            logger.info("No persisted OAuth state at %s — starting fresh", self._state_file)
+            return
+
+        try:
+            raw = json.loads(self._state_file.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning(
+                "Failed to load OAuth state from %s: %s — starting fresh",
+                self._state_file,
+                exc,
+            )
+            return
+
+        now = int(time.time())
+
+        # Clients (never expire)
+        for client_id, data in raw.get("clients", {}).items():
+            try:
+                self._clients[client_id] = OAuthClientInformationFull.model_validate(data)
+            except Exception as exc:
+                logger.warning("Skipping invalid client %s: %s", client_id, exc)
+
+        # Auth codes (short-lived, prune expired)
+        for code, data in raw.get("auth_codes", {}).items():
+            try:
+                ac = AuthorizationCode.model_validate(data)
+                if ac.expires_at > now:
+                    self._auth_codes[code] = ac
+            except Exception as exc:
+                logger.warning("Skipping invalid auth code: %s", exc)
+
+        # Access tokens (prune expired)
+        for token, data in raw.get("access_tokens", {}).items():
+            try:
+                at = AccessToken.model_validate(data)
+                if at.expires_at is None or at.expires_at > now:
+                    self._access_tokens[token] = at
+            except Exception as exc:
+                logger.warning("Skipping invalid access token: %s", exc)
+
+        # Refresh tokens (prune expired)
+        for token, data in raw.get("refresh_tokens", {}).items():
+            try:
+                rt = RefreshToken.model_validate(data)
+                if rt.expires_at is None or rt.expires_at > now:
+                    self._refresh_tokens[token] = rt
+            except Exception as exc:
+                logger.warning("Skipping invalid refresh token: %s", exc)
+
+        # Pending auths (no explicit TTL — prune anything older than 10 min)
+        pending_ttl = 600
+        for state_key, data in raw.get("pending_auths", {}).items():
+            try:
+                client_id = data["client_id"]
+                created_at = data.get("created_at", 0)
+                params = AuthorizationParams.model_validate(data["params"])
+                if now - created_at < pending_ttl:
+                    self._pending_auths[state_key] = (client_id, params)
+            except Exception as exc:
+                logger.warning("Skipping invalid pending auth: %s", exc)
+
+        logger.info(
+            "Loaded OAuth state: %d clients, %d access tokens, %d refresh tokens, %d pending auths",
+            len(self._clients),
+            len(self._access_tokens),
+            len(self._refresh_tokens),
+            len(self._pending_auths),
+        )
+
+    def _save_state(self) -> None:
+        """Persist current OAuth state to disk."""
+        state: dict[str, Any] = {
+            "clients": {
+                cid: client.model_dump(mode="json") for cid, client in self._clients.items()
+            },
+            "auth_codes": {
+                code: ac.model_dump(mode="json") for code, ac in self._auth_codes.items()
+            },
+            "access_tokens": {
+                tok: at.model_dump(mode="json") for tok, at in self._access_tokens.items()
+            },
+            "refresh_tokens": {
+                tok: rt.model_dump(mode="json") for tok, rt in self._refresh_tokens.items()
+            },
+            "pending_auths": {
+                state_key: {
+                    "client_id": client_id,
+                    "params": params.model_dump(mode="json"),
+                    "created_at": int(time.time()),
+                }
+                for state_key, (client_id, params) in self._pending_auths.items()
+            },
+        }
+
+        try:
+            self._state_file.parent.mkdir(parents=True, exist_ok=True)
+            # Atomic write: write to temp file, then rename
+            tmp = self._state_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(state, indent=2))
+            tmp.rename(self._state_file)
+        except OSError as exc:
+            logger.error("Failed to persist OAuth state to %s: %s", self._state_file, exc)
 
     # ------------------------------------------------------------------
     # Dynamic Client Registration
@@ -91,6 +212,7 @@ class ObsidianPalaceOAuthProvider(
             client_info.client_name or "unnamed",
         )
         self._clients[client_info.client_id] = client_info
+        self._save_state()
 
     # ------------------------------------------------------------------
     # Authorization
@@ -121,6 +243,7 @@ class ObsidianPalaceOAuthProvider(
         # Generate our own state to link Google callback back to this auth request
         google_state = secrets.token_urlsafe(32)
         self._pending_auths[google_state] = (client.client_id, params)
+        self._save_state()
 
         # Build Google OAuth URL
         google_params = {
@@ -217,6 +340,7 @@ class ObsidianPalaceOAuthProvider(
             expires_at=now + AUTH_CODE_TTL,
             resource=auth_params.resource,
         )
+        self._save_state()
 
         # Redirect back to MCP client
         return construct_redirect_uri(
@@ -272,6 +396,8 @@ class ObsidianPalaceOAuthProvider(
             expires_at=now + REFRESH_TOKEN_TTL,
         )
 
+        self._save_state()
+
         return OAuthToken(
             access_token=access_token_str,
             token_type="Bearer",
@@ -298,6 +424,7 @@ class ObsidianPalaceOAuthProvider(
         # Check expiry (explicit None check — 0 is a valid expired timestamp)
         if token.expires_at is not None and token.expires_at < int(time.time()):
             self._refresh_tokens.pop(refresh_token, None)
+            self._save_state()
             return None
         return token
 
@@ -332,6 +459,8 @@ class ObsidianPalaceOAuthProvider(
             expires_at=now + REFRESH_TOKEN_TTL,
         )
 
+        self._save_state()
+
         return OAuthToken(
             access_token=access_token_str,
             token_type="Bearer",
@@ -352,6 +481,7 @@ class ObsidianPalaceOAuthProvider(
         # Check expiry (explicit None check — 0 is a valid expired timestamp)
         if access_token.expires_at is not None and access_token.expires_at < int(time.time()):
             self._access_tokens.pop(token, None)
+            self._save_state()
             return None
         return access_token
 
@@ -380,3 +510,5 @@ class ObsidianPalaceOAuthProvider(
             ]
             for k in to_remove:
                 self._access_tokens.pop(k, None)
+
+        self._save_state()

@@ -39,6 +39,7 @@ def test_settings(tmp_vault: Path, tmp_path: Path) -> Settings:
     return Settings(
         vault_path=tmp_vault,
         chromadb_path=tmp_path / "chromadb",
+        oauth_state_path=tmp_path / "oauth_state.json",
         allowed_email="test@example.com",
         google_client_id="test-client-id",
         google_client_secret="test-secret",
