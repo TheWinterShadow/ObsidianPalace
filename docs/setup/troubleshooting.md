@@ -265,6 +265,20 @@ curl -s -X POST https://YOUR_DOMAIN/register \
 
 If any of these return errors, check the MCP server logs.
 
+### OAuth discovery returns `localhost`
+
+**Symptom**: MCP clients fail to connect. `curl https://YOUR_DOMAIN/.well-known/oauth-protected-resource` returns URLs pointing to `https://localhost:8080/` instead of your public domain.
+
+**Cause**: The `OBSIDIAN_PALACE_SERVER_URL` environment variable is not set or not being passed to the container. The server defaults to `https://localhost:8080`.
+
+**Fix**: Ensure the docker run command includes `-e OBSIDIAN_PALACE_SERVER_URL="https://YOUR_DOMAIN"`. In the Terraform-managed startup script, this is set automatically from `var.domain`. Verify the `domain` variable is set in your TFC workspace.
+
+```bash
+# Check what the container sees
+docker exec obsidian-palace env | grep SERVER_URL
+# Expected: OBSIDIAN_PALACE_SERVER_URL=https://YOUR_DOMAIN
+```
+
 ### OAuth token issues
 
 **Symptom**: Auth flow completes (browser redirects back) but the MCP client gets 401 on subsequent requests.
@@ -330,7 +344,7 @@ mount | grep /mnt/disks/data
 # Should show: /dev/sdb on /mnt/disks/data type ext4 (rw,relatime)
 
 ls /mnt/disks/data/
-# Expected directories: vault/ chromadb/ obsidian-config/ letsencrypt/ certbot-webroot/ docker-config/
+# Expected directories: vault/ chromadb/ obsidian-config/ letsencrypt/ certbot-webroot/ docker-config/ state/
 ```
 
 If the disk isn't mounted, the startup script should handle it. Re-run:

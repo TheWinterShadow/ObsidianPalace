@@ -261,7 +261,12 @@ sudo google_metadata_script_runner startup
 
 ## Step 9: Configure Obsidian Sync on the Server
 
-The vault sync requires a one-time interactive setup inside the running container. SSH into the instance and run `ob login` + `ob sync-setup` inside the container:
+!!! warning "Manual step — cannot be automated"
+    This step **must** be done manually after the first deploy and again any time the sync configuration at `/data/vault/.obsidian/` is lost (e.g., after recreating the persistent disk). The `ob sync-setup` command is interactive and requires selecting a vault. There is no way to automate this through CI/CD.
+
+    Until this step is complete, the `obsidian-sync` process will be in `FATAL` state (visible in container logs as `"No sync configuration found for /data/vault"`), the vault directory will be empty, and search will return no results. The MCP server itself still runs and responds to health checks — only sync is affected.
+
+The vault sync requires a one-time interactive setup inside the running container. SSH into the instance and run `ob sync-setup`:
 
 ```bash
 # SSH into the GCE instance
@@ -331,6 +336,7 @@ All configuration is via environment variables with the `OBSIDIAN_PALACE_` prefi
 | `OBSIDIAN_PALACE_SERVER_URL` | `https://YOUR_URL` | Public URL of your server (used for OAuth metadata) |
 | `OBSIDIAN_PALACE_VAULT_PATH` | `/data/vault` | Path to the Obsidian vault directory |
 | `OBSIDIAN_PALACE_CHROMADB_PATH` | `/data/chromadb` | Path to the ChromaDB storage directory |
+| `OBSIDIAN_PALACE_OAUTH_STATE_PATH` | `/data/oauth_state.json` | Path to the OAuth state persistence file |
 | `OBSIDIAN_PALACE_ANTHROPIC_API_KEY` | (empty) | Anthropic API key for AI placement |
 | `OBSIDIAN_PALACE_MEMPALACE_ENABLED` | `true` | Enable/disable semantic search indexing |
 | `OBSIDIAN_PALACE_HOST` | `0.0.0.0` | Server bind host |
