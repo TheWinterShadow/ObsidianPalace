@@ -125,9 +125,7 @@ async def list_notes(relative_path: str = "", extensions: tuple[str, ...] = (".m
     )
 
 
-async def notes_for_date(
-    target_date: date, extensions: tuple[str, ...] = (".md",)
-) -> list[str]:
+async def notes_for_date(target_date: date, extensions: tuple[str, ...] = (".md",)) -> list[str]:
     """Find all notes in the vault last modified on a given date.
 
     Walks the entire vault recursively and returns vault-relative paths

@@ -25,7 +25,12 @@ class TestCreateMcpServer:
         tools = mcp._tool_manager._tools
         names = set(tools.keys())
         assert names == {
-            "search_vault", "read_note", "write_note", "list_folders", "list_notes", "notes_for_date"
+            "search_vault",
+            "read_note",
+            "write_note",
+            "list_folders",
+            "list_notes",
+            "notes_for_date",
         }
 
 
@@ -99,15 +104,11 @@ class TestToolFunctions:
         assert "00_Inbox/quick-note.md" in result
 
     async def test_notes_for_date_none_found(self, mcp_server) -> None:
-        result = await mcp_server._tool_manager.call_tool(
-            "notes_for_date", {"date": "1970-01-01"}
-        )
+        result = await mcp_server._tool_manager.call_tool("notes_for_date", {"date": "1970-01-01"})
         assert "No notes found" in result
 
     async def test_notes_for_date_invalid(self, mcp_server) -> None:
-        result = await mcp_server._tool_manager.call_tool(
-            "notes_for_date", {"date": "not-a-date"}
-        )
+        result = await mcp_server._tool_manager.call_tool("notes_for_date", {"date": "not-a-date"})
         assert "Invalid date" in result
 
     async def test_search_vault_empty(self, mcp_server) -> None:

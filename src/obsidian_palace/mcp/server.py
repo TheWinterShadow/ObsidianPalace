@@ -130,8 +130,7 @@ def create_mcp_server() -> tuple[FastMCP, ObsidianPalaceOAuthProvider]:
     @mcp.tool(
         name="notes_for_date",
         description=(
-            "List all notes last modified on a specific date. "
-            "Date must be in YYYY-MM-DD format."
+            "List all notes last modified on a specific date. " "Date must be in YYYY-MM-DD format."
         ),
     )
     async def notes_for_date_tool(date: str) -> str:
