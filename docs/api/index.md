@@ -26,8 +26,8 @@ When the server is running, interactive documentation is available at:
 | `GET` | `/docs` | Swagger UI | None |
 | `GET` | `/redoc` | ReDoc documentation | None |
 | `GET` | `/openapi.json` | OpenAPI specification | None |
-| `GET` | `/mcp/sse` | MCP SSE connection | OAuth 2.0 |
-| `POST` | `/mcp/messages/` | MCP message endpoint | OAuth 2.0 |
+| `GET` | `/sse` | MCP SSE transport | OAuth 2.0 |
+| `POST` | `/mcp` | MCP Streamable HTTP transport | OAuth 2.0 |
 
 ## Health Check
 
@@ -47,8 +47,14 @@ curl https://YOUR_URL/health
 The MCP endpoints require a Google OAuth 2.0 Bearer token:
 
 ```bash
+# SSE transport
 curl -H "Authorization: Bearer <token>" \
-  https://YOUR_URL/mcp/sse
+  https://YOUR_URL/sse
+
+# Streamable HTTP transport
+curl -X POST -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  https://YOUR_URL/mcp
 ```
 
 The token is validated against Google's userinfo endpoint. Only the configured `allowed_email` is permitted access.
@@ -61,7 +67,7 @@ Detailed auto-generated documentation for each Python module is available in the
 - [Configuration](config.md) -- Pydantic Settings, environment variables
 - [Auth / OAuth](auth/oauth.md) -- Google OAuth 2.0 token validation
 - [MCP / Server](mcp/server.md) -- MCP tool definitions and handlers
-- [MCP / Transport](mcp/transport.md) -- SSE transport mounting
+- [MCP / Transport](mcp/transport.md) -- SSE + Streamable HTTP transport mounting
 - [Vault / Operations](vault/operations.md) -- File read/write/list operations
 - [Vault / Placement](vault/placement.md) -- AI-assisted file placement
 - [Search / Searcher](search/searcher.md) -- MemPalace search wrapper

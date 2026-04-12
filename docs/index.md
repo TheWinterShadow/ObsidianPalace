@@ -19,7 +19,7 @@ hide:
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/TheWinterShadow/ObsidianPalace/blob/main/LICENSE)
 [![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=flat&logo=terraform&logoColor=white)](https://www.terraform.io/)
-[![MCP](https://img.shields.io/badge/MCP-SSE-purple.svg)](https://modelcontextprotocol.io/)
+[![MCP](https://img.shields.io/badge/MCP-SSE%20%2B%20HTTP-purple.svg)](https://modelcontextprotocol.io/)
 
 </div>
 
@@ -63,12 +63,13 @@ hide:
 
 ## How it works
 
-ObsidianPalace runs as a single Docker container with two processes managed by supervisord:
+ObsidianPalace runs as a single Docker container with three processes managed by supervisord:
 
-1. **Node.js sidecar** -- `ob sync --continuous` keeps the vault synchronized with Obsidian Sync
-2. **Python MCP server** -- FastAPI + MCP SDK exposes vault tools over SSE transport
+1. **nginx** -- SSL termination (Let's Encrypt) + reverse proxy
+2. **Node.js sidecar** -- `ob sync --continuous` keeps the vault synchronized with Obsidian Sync, gated by `sync-guard.sh`
+3. **Python MCP server** -- FastAPI + MCP SDK exposes vault tools over SSE (`/sse`) and Streamable HTTP (`/mcp`) transports
 
-AI clients like Claude Desktop, Claude iOS, and claude.ai connect via the Model Context Protocol and get full read/write/search access to your vault.
+AI clients like Claude Desktop, Claude iOS, claude.ai, and OpenCode connect via the Model Context Protocol and get full read/write/search access to your vault.
 
 ```mermaid
 flowchart LR

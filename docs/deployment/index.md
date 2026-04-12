@@ -140,20 +140,30 @@ This runs certbot on the 1st and 15th of each month at 3 AM.
 
 ## Updating Obsidian Sync Credentials
 
-If your Obsidian Sync session expires or you change your Obsidian account password:
+The `ob` CLI stores two pieces of state, both persisted on the data disk via symlinks created by `entrypoint.sh`:
+
+| Credential | Written by | Persistent disk path |
+|------------|-----------|---------------------|
+| Auth token | `ob login` | `/data/obsidian-config/headless/auth_token` |
+| Sync config | `ob sync-setup` | `/data/obsidian-config/config/sync/<vault-id>/config.json` |
+
+If your Obsidian session expires or you change your account password, re-run the appropriate command:
 
 ```bash
 # SSH into the instance
 gcloud compute ssh obsidian-palace --zone=us-central1-a --project=YOUR_PROJECT_ID
 
-# Re-authenticate inside the container
+# Re-authenticate (if auth token expired)
 docker exec -it obsidian-palace ob login
+
+# Re-configure sync (if sync config is missing — rare)
+docker exec -it obsidian-palace ob sync-setup
 
 # Restart the container to pick up new credentials
 docker restart obsidian-palace
 ```
 
-The new auth token is written to the persistent disk and survives container restarts.
+Both credentials survive container rebuilds and redeploys because they live on the persistent disk. `sync-guard.sh` verifies both exist before allowing `ob sync` to start.
 
 ---
 
@@ -195,8 +205,10 @@ terraform {
 |------|----------|-------------|
 | `/mnt/disks/data/vault/` | Your Obsidian vault files | Yes -- re-synced from Obsidian Sync |
 | `/mnt/disks/data/chromadb/` | Semantic search index | Yes -- rebuilt on startup |
-| `/mnt/disks/data/obsidian-config/` | `ob` CLI auth token | No -- requires `ob login` |
+| `/mnt/disks/data/obsidian-config/headless/` | `ob login` auth token | No -- requires interactive `ob login` |
+| `/mnt/disks/data/obsidian-config/config/sync/<vault-id>/` | `ob sync-setup` vault config | No -- requires interactive `ob sync-setup` |
 | `/mnt/disks/data/letsencrypt/` | SSL certificates | Yes -- re-issued by certbot |
+| `/mnt/disks/data/state/` | OAuth session state | Yes -- regenerated on use |
 
 ### Creating a disk snapshot
 

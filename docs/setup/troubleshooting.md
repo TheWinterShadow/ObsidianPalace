@@ -94,10 +94,10 @@ The `ob` CLI (obsidian-headless) is the Node.js sidecar that syncs your vault. M
 ```bash
 # Check the symlink and auth token on the persistent disk
 docker exec obsidian-palace ls -la /root/.obsidian-headless/
-# Should be a symlink to /data/obsidian-config/
+# Should be a symlink to /data/obsidian-config/headless/
 
-docker exec obsidian-palace cat /root/.obsidian-headless/auth_token
-# Should be a 32-byte hex string
+docker exec obsidian-palace cat /data/obsidian-config/headless/auth_token
+# Should be a non-empty token string
 ```
 
 If the auth token is missing or the symlink is broken, re-authenticate:
@@ -107,16 +107,20 @@ docker exec -it obsidian-palace ob login
 # Enter: email, password, MFA code (interactive)
 ```
 
-The entrypoint script symlinks `/root/.obsidian-headless/` → `/data/obsidian-config/` on startup, so the token persists on the data disk across container restarts.
+The entrypoint script symlinks `/root/.obsidian-headless/` -> `/data/obsidian-config/headless/` on startup, so the token persists on the data disk across container restarts.
 
 ### Verify sync configuration
 
-`ob sync-setup` writes config to `/data/vault/.obsidian/`. If this directory is empty or missing, sync won't work even if the auth token is valid.
+`ob sync-setup` writes config to `~/.config/obsidian-headless/sync/<vault-id>/config.json`, which the entrypoint symlinks to `/data/obsidian-config/config/`. If this config is missing, sync won't start even if the auth token is valid (sync-guard.sh Gate 2 will block it).
 
 ```bash
-# Check if sync config exists
-docker exec obsidian-palace ls -la /data/vault/.obsidian/
-# Should contain files like sync-config.json, etc.
+# Check if sync config exists on the persistent disk
+docker exec obsidian-palace find /data/obsidian-config/config/sync -name 'config.json' -type f
+# Should show: /data/obsidian-config/config/sync/<vault-id>/config.json
+
+# Verify the symlink
+docker exec obsidian-palace ls -la /root/.config/obsidian-headless
+# Should be a symlink to /data/obsidian-config/config/
 
 # List available vaults (to find or verify your vault ID)
 docker exec obsidian-palace ob list-vaults
@@ -126,7 +130,7 @@ docker exec obsidian-palace ob list-vaults
 If sync config is missing, re-run setup:
 
 ```bash
-docker exec obsidian-palace ob sync-setup \
+docker exec -it obsidian-palace ob sync-setup \
   --vault YOUR_VAULT_ID \
   --path /data/vault \
   --device-name obsidian-palace
@@ -155,20 +159,30 @@ docker exec obsidian-palace supervisorctl start obsidian-sync
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `auth_token not found` | Token missing or symlink broken | Re-run `ob login` |
-| `vault not found` | Sync not configured | Re-run `ob sync-setup` |
+| `No sync config found` / Gate 2 blocked | Sync config missing | Re-run `ob sync-setup` |
+| `Vault has fewer than N .md files` / Gate 3 blocked | Vault empty or below threshold | Check vault content; adjust `OBSIDIAN_PALACE_MIN_VAULT_FILES` if vault is genuinely small |
 | `network error` / `ECONNREFUSED` | Obsidian Sync servers unreachable | Check instance egress; try again later |
 | Sync starts but no files appear | Wrong vault ID or empty vault | Verify vault ID with `ob list-vaults` |
 | `FATAL` on startup, immediate exit | Auth token expired | Re-run `ob login` (tokens expire after extended periods) |
 
 ### Sync config lost after container rebuild
 
-When the container image is rebuilt and redeployed, the `ob` CLI's runtime config inside the container is replaced. The auth token survives because it's on the persistent disk, but the sync config at `/data/vault/.obsidian/` should also survive since it's on the data disk.
+Both the auth token and sync config are persisted on the data disk and symlinked into the container filesystem by `entrypoint.sh` on every boot:
 
-If sync breaks after a deploy:
+| Container path | Symlink target (persistent disk) |
+|---|---|
+| `~/.obsidian-headless/` | `/data/obsidian-config/headless/` |
+| `~/.config/obsidian-headless/` | `/data/obsidian-config/config/` |
 
-1. Check that `/data/vault/.obsidian/` still has content
-2. If empty, re-run `ob sync-setup` (you don't need to re-run `ob login` unless the token also expired)
-3. Restart the container: `docker restart obsidian-palace`
+Because the symlinks are recreated on every container start, rebuilding and redeploying the image does **not** lose either credential. `sync-guard.sh` verifies both exist before allowing `ob sync` to start.
+
+If sync still breaks after a deploy:
+
+1. Check that the auth token exists: `ls -la /data/obsidian-config/headless/auth_token`
+2. Check that the sync config exists: `find /data/obsidian-config/config/sync/ -name config.json`
+3. If the auth token is missing, re-run `ob login` inside the container
+4. If the sync config is missing, re-run `ob sync-setup` inside the container
+5. Restart the container: `docker restart obsidian-palace`
 
 ---
 

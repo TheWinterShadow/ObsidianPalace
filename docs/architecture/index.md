@@ -20,13 +20,15 @@ flowchart TD
         CD["Claude Desktop"]
         CI["Claude iOS"]
         CW["claude.ai"]
+        OC["OpenCode"]
     end
 
     subgraph VM ["GCE e2-small"]
         subgraph Container ["Docker Container (supervisord)"]
             direction TB
             subgraph Python ["Python Server (FastAPI)"]
-                MCP["MCP SSE Transport"]
+                SSE["SSE Transport (/sse)"]
+                HTTP["Streamable HTTP (/mcp)"]
                 AUTH["OAuth 2.0 Middleware"]
                 TOOLS["Tool Handlers"]
                 MP["MemPalace (ChromaDB)"]
@@ -34,12 +36,14 @@ flowchart TD
             end
 
             subgraph Node ["Node.js Sidecar"]
+                SG["sync-guard.sh"]
                 OB["ob sync --continuous"]
             end
         end
 
         VAULT["/data/vault"]
         CHROMA["/data/chromadb"]
+        CONFIG["/data/obsidian-config"]
     end
 
     subgraph External ["External Services"]
@@ -48,11 +52,13 @@ flowchart TD
         GOOGLE["Google OAuth"]
     end
 
-    CD -->|"SSE"| MCP
-    CI -->|"SSE"| MCP
-    CW -->|"SSE"| MCP
+    CD -->|"SSE"| SSE
+    CI -->|"SSE"| SSE
+    CW -->|"SSE"| SSE
+    OC -->|"HTTP"| HTTP
 
-    MCP --> AUTH
+    SSE --> AUTH
+    HTTP --> AUTH
     AUTH -->|"Validate token"| GOOGLE
     AUTH --> TOOLS
     TOOLS -->|"Read / Write"| VAULT
@@ -61,18 +67,20 @@ flowchart TD
     PLACE -->|"Claude API"| ANTHROPIC
     MP --> CHROMA
 
+    SG -->|"3 safety gates"| OB
     OB <-->|"Bidirectional sync"| OS
     OB <--> VAULT
+    SG -.->|"reads config"| CONFIG
 ```
 
 ## Core Components
 
-### 1. MCP SSE Transport
+### 1. MCP Transport Layer
 
-The entry point for all AI client connections. Implements the Model Context Protocol over Server-Sent Events, which is the transport required by Claude's Custom Connectors.
+The entry point for all AI client connections. Implements the Model Context Protocol over two transports:
 
-- **Endpoint**: `/sse` -- SSE connection for MCP messages
-- **Endpoint**: `/messages/` -- POST endpoint for client-to-server messages
+- **SSE Endpoint**: `/sse` -- Server-Sent Events connection for MCP messages (used by Claude Desktop, Claude Code, Claude iOS, claude.ai)
+- **Streamable HTTP Endpoint**: `/mcp` -- Single POST endpoint for MCP messages (used by OpenCode)
 - **Auth**: MCP OAuth 2.1 authentication with PKCE (see below)
 
 ### 2. MCP OAuth 2.1 Authentication
@@ -115,10 +123,22 @@ ChromaDB-backed semantic search over the vault contents. A file watcher monitors
 
 ### 6. Obsidian Sync Sidecar
 
-A Node.js process running `ob sync --continuous` from the `obsidian-headless` CLI. This keeps the vault directory synchronized with Obsidian's cloud sync service bidirectionally.
+A Node.js process running `ob sync --continuous` from the `obsidian-headless` CLI, gated by `sync-guard.sh`. This keeps the vault directory synchronized with Obsidian's cloud sync service bidirectionally.
 
-- **Credentials**: Extracted from a one-time interactive `ob login`, stored in GCP Secret Manager, injected at container startup
+- **Credentials**: `ob login` writes to `~/.obsidian-headless/auth_token`, symlinked to persistent disk at `/data/obsidian-config/headless/`
+- **Sync config**: `ob sync-setup` writes to `~/.config/obsidian-headless/sync/<vault-id>/config.json`, symlinked to persistent disk at `/data/obsidian-config/config/`
 - **Sync mode**: Bidirectional -- changes from MCP clients propagate back to Obsidian apps and vice versa
+- **Safety**: `sync-guard.sh` runs three gates before starting sync: (1) auth_token exists, (2) sync config exists, (3) vault has >= 400 `.md` files
+
+### 7. sync-guard.sh
+
+A safety wrapper that runs before `ob sync` to prevent a misconfigured or empty vault from propagating deletions to all Obsidian Sync devices. Three gates:
+
+1. **Credential gate**: Verifies `ob login` auth_token exists on persistent disk
+2. **Sync config gate**: Verifies `ob sync-setup` config.json exists on persistent disk
+3. **File count gate**: Counts `.md` files in the vault; blocks sync if below the safety threshold (default: 400)
+
+If any gate fails, supervisord retries up to its configured limit, then marks the process FATAL. The MCP server continues running and serves whatever is on disk.
 
 ## Process Management
 
@@ -126,11 +146,18 @@ Three processes run inside a single container managed by **supervisord**:
 
 | Process | Command | Role |
 |---------|---------|------|
-| `nginx` | `nginx -g "daemon off;"` | SSL termination + reverse proxy (443 → 8080) |
-| `obsidian-sync` | `ob sync --continuous` | Keeps vault in sync with Obsidian Sync |
-| `mcp-server` | `uvicorn obsidian_palace.app:app` | Serves MCP tools over SSE |
+| `nginx` | `nginx -g "daemon off;"` | SSL termination + reverse proxy (443 -> 8080) |
+| `obsidian-sync` | `sync-guard.sh` (which execs `ob sync --continuous`) | Keeps vault in sync with Obsidian Sync |
+| `mcp-server` | `uvicorn obsidian_palace.app:app` | Serves MCP tools over SSE and Streamable HTTP |
 
-An `entrypoint.sh` script runs before supervisord to inject Obsidian Sync credentials and wait for the initial vault sync to pull at least one file. Supervisord ensures all three processes restart on failure and logs are captured.
+An `entrypoint.sh` script runs before supervisord to:
+
+1. **Symlink `ob` CLI config directories** to the persistent data disk so credentials and sync config survive container restarts:
+    - `~/.obsidian-headless/` -> `/data/obsidian-config/headless/` (auth_token from `ob login`)
+    - `~/.config/obsidian-headless/` -> `/data/obsidian-config/config/` (sync config from `ob sync-setup`)
+2. **Migrate legacy config layout** if a previous version stored auth_token at a different path
+3. **Start a background watcher** that creates a readiness flag once `.md` files exist in the vault
+4. **Exec supervisord** to manage all three processes
 
 ## Data Flow
 

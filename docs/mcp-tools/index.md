@@ -6,16 +6,16 @@ icon: material/tools
 
 # MCP Tools
 
-ObsidianPalace exposes five tools via the Model Context Protocol. Any MCP-compatible client (Claude Desktop, Claude iOS, claude.ai) can invoke these tools after establishing an authenticated SSE connection.
+ObsidianPalace exposes five tools via the Model Context Protocol. Any MCP-compatible client (Claude Desktop, Claude iOS, claude.ai, OpenCode) can invoke these tools after connecting via either transport.
 
 ## Connection
 
-Connect to the MCP server at:
+Connect to the MCP server using one of two transports:
 
-```
-SSE: https://YOUR_URL/sse
-Messages: https://YOUR_URL/messages/
-```
+| Transport | Endpoint | Description |
+|-----------|----------|-------------|
+| **SSE** | `https://YOUR_URL/sse` | Server-Sent Events — supported by most MCP clients |
+| **Streamable HTTP** | `https://YOUR_URL/mcp` | Newer HTTP-based transport — used by OpenCode and other modern clients |
 
 All requests require a valid Google OAuth 2.0 Bearer token in the `Authorization` header.
 

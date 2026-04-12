@@ -261,12 +261,14 @@ sudo google_metadata_script_runner startup
 
 ## Step 9: Configure Obsidian Sync on the Server
 
-!!! warning "Manual step — cannot be automated"
-    This step **must** be done manually after the first deploy and again any time the sync configuration at `/data/vault/.obsidian/` is lost (e.g., after recreating the persistent disk). The `ob sync-setup` command is interactive and requires selecting a vault. There is no way to automate this through CI/CD.
+!!! warning "One-time manual step"
+    This step **must** be done manually after the first deploy. The `ob login` and `ob sync-setup` commands are interactive and cannot be automated through CI/CD.
 
-    Until this step is complete, the `obsidian-sync` process will be in `FATAL` state (visible in container logs as `"No sync configuration found for /data/vault"`), the vault directory will be empty, and search will return no results. The MCP server itself still runs and responds to health checks — only sync is affected.
+    After this initial setup, credentials and sync config are persisted on the data disk and survive all future container restarts and image deploys. You should never need to repeat this unless you recreate the persistent disk or your Obsidian auth token expires.
 
-The vault sync requires a one-time interactive setup inside the running container. SSH into the instance and run `ob sync-setup`:
+    Until this step is complete, the `obsidian-sync` process will be in `FATAL` state (sync-guard.sh blocks it), the vault directory will be empty, and search will return no results. The MCP server itself still runs and responds to health checks -- only sync is affected.
+
+SSH into the instance and configure sync inside the running container:
 
 ```bash
 # SSH into the GCE instance
@@ -289,10 +291,29 @@ exit
 docker restart obsidian-palace
 ```
 
-The auth token is persisted on the data disk at `/data/obsidian-config/auth_token`, so it survives container restarts. You only need to do this once (unless the token expires or you rebuild the persistent disk).
+### What gets persisted
 
-!!! warning "Container rebuilds"
-    If the container is rebuilt (not just restarted), the `ob login` session inside the container may be lost. The entrypoint script symlinks from the persistent disk, but if you delete the data disk or re-create the instance from scratch, you'll need to repeat this step.
+The `entrypoint.sh` script symlinks two `ob` CLI directories to the persistent data disk:
+
+| `ob` CLI writes to | Symlinked to (persistent disk) | Created by |
+|---------------------|-------------------------------|------------|
+| `~/.obsidian-headless/auth_token` | `/data/obsidian-config/headless/auth_token` | `ob login` |
+| `~/.config/obsidian-headless/sync/<vault-id>/config.json` | `/data/obsidian-config/config/sync/<vault-id>/config.json` | `ob sync-setup` |
+
+Both persist across container restarts, image rebuilds, and VM resets. The `entrypoint.sh` recreates the symlinks on every container start.
+
+### sync-guard.sh safety gates
+
+Before `ob sync` starts, `sync-guard.sh` checks three conditions:
+
+1. **Auth token exists** -- verifies `/data/obsidian-config/headless/auth_token` is present
+2. **Sync config exists** -- verifies at least one `config.json` exists under `/data/obsidian-config/config/sync/`
+3. **Vault file count** -- counts `.md` files in `/data/vault` and blocks sync if below the safety threshold (default: 400)
+
+The file count gate prevents a scenario where an empty or corrupted vault tells Obsidian Sync "I have no files," causing deletions to propagate to all connected devices (phones, desktops, etc.).
+
+!!! tip "Adjusting the file count threshold"
+    The default minimum is 400 `.md` files. If your vault is smaller, set the `OBSIDIAN_PALACE_MIN_VAULT_FILES` environment variable to an appropriate value. Set it close to your actual vault size for the best protection.
 
 ---
 
