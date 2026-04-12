@@ -61,7 +61,7 @@ class TestSearchSync:
                     "text": "Another result about tests.",
                     "wing": "obsidian",
                     "room": "general",
-                    "source_file": "Inbox/notes.md",
+                    "source_file": "00_Inbox/notes.md",
                     "similarity": 0.72,
                 },
             ],

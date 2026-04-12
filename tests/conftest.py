@@ -18,7 +18,7 @@ def tmp_vault(tmp_path: Path) -> Path:
     (vault / "Projects").mkdir()
     (vault / "Projects" / "ObsidianPalace").mkdir()
     (vault / "Daily Notes").mkdir()
-    (vault / "Inbox").mkdir()
+    (vault / "00_Inbox").mkdir()
     (vault / "References").mkdir()
 
     # Create sample notes
@@ -28,7 +28,7 @@ def tmp_vault(tmp_path: Path) -> Path:
     (vault / "Daily Notes" / "2025-04-11.md").write_text(
         "# 2025-04-11\n\nStarted scaffolding ObsidianPalace.\n"
     )
-    (vault / "Inbox" / "quick-note.md").write_text("# Quick Note\n\nSome quick thoughts.\n")
+    (vault / "00_Inbox" / "quick-note.md").write_text("# Quick Note\n\nSome quick thoughts.\n")
 
     return vault
 

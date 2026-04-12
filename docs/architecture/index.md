@@ -103,7 +103,7 @@ When a note is written without an explicit path, the system calls Claude to dete
 - The note's title and content preview
 - Existing organizational patterns
 
-Falls back to `Inbox/` if no Anthropic API key is configured or the API call fails.
+Falls back to `00_Inbox/` if no Anthropic API key is configured or the API call fails.
 
 ### 5. MemPalace (Semantic Search)
 

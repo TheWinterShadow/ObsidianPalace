@@ -125,7 +125,7 @@ When `path` is omitted:
 3. Claude returns a recommended path (e.g., `Engineering/Infrastructure/terraform-best-practices.md`)
 4. The note is written to that path, creating parent directories as needed
 
-**Fallback**: If no Anthropic API key is configured or the API call fails, the note is written to `Inbox/{title}.md`.
+**Fallback**: If no Anthropic API key is configured or the API call fails, the note is written to `00_Inbox/{title}.md`.
 
 ---
 

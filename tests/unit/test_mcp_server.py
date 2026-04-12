@@ -54,29 +54,29 @@ class TestToolFunctions:
     async def test_write_note(self, mcp_server, tmp_vault: Path) -> None:
         result = await mcp_server._tool_manager.call_tool(
             "write_note",
-            {"content": "# Test\n\nTest content.", "path": "Inbox/mcp-test.md"},
+            {"content": "# Test\n\nTest content.", "title": "mcp-test"},
         )
         assert isinstance(result, str)
         assert "Note written to" in result
-        assert (tmp_vault / "Inbox" / "mcp-test.md").exists()
+        assert (tmp_vault / "00_Inbox" / "mcp-test.md").exists()
 
     async def test_write_note_ai_placement_fallback(self, mcp_server, tmp_vault: Path) -> None:
-        """Without an API key, AI placement falls back to Inbox/."""
+        """Without an API key, AI placement falls back to 00_Inbox/."""
         result = await mcp_server._tool_manager.call_tool(
             "write_note",
-            {"content": "# No path given\n\nShould go to Inbox.", "title": "fallback-test"},
+            {"content": "# No path given\n\nShould go to 00_Inbox.", "title": "fallback-test"},
         )
         assert isinstance(result, str)
-        assert "Inbox/fallback-test.md" in result
+        assert "00_Inbox/fallback-test.md" in result
 
     async def test_list_folders(self, mcp_server) -> None:
         result = await mcp_server._tool_manager.call_tool("list_folders", {"path": ""})
         assert isinstance(result, str)
         assert "Projects/" in result
-        assert "Inbox/" in result
+        assert "00_Inbox/" in result
 
     async def test_list_notes(self, mcp_server) -> None:
-        result = await mcp_server._tool_manager.call_tool("list_notes", {"path": "Inbox"})
+        result = await mcp_server._tool_manager.call_tool("list_notes", {"path": "00_Inbox"})
         assert isinstance(result, str)
         assert "quick-note.md" in result
 

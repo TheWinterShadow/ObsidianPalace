@@ -28,7 +28,7 @@ class TestReadNote:
 
 class TestWriteNote:
     async def test_write_new_note(self, tmp_vault: Path) -> None:
-        path = await write_note("Inbox/test-note.md", "# Test\n\nContent here.\n")
+        path = await write_note("00_Inbox/test-note.md", "# Test\n\nContent here.\n")
         assert path.exists()
         assert path.read_text() == "# Test\n\nContent here.\n"
 
@@ -46,7 +46,7 @@ class TestListFolders:
     async def test_list_root_folders(self) -> None:
         folders = await list_folders()
         assert "Projects" in folders
-        assert "Inbox" in folders
+        assert "00_Inbox" in folders
         assert "Daily Notes" in folders
         assert "References" in folders
 
@@ -61,7 +61,7 @@ class TestListFolders:
 
 class TestListNotes:
     async def test_list_notes_in_folder(self) -> None:
-        notes = await list_notes("Inbox")
+        notes = await list_notes("00_Inbox")
         assert "quick-note.md" in notes
 
     async def test_list_notes_nonexistent_returns_empty(self) -> None:
