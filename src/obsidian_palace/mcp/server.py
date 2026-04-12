@@ -17,6 +17,7 @@ from obsidian_palace.search.searcher import search
 from obsidian_palace.vault.operations import (
     list_folders,
     list_notes,
+    notes_for_date,
     read_note,
     write_note,
 )
@@ -125,5 +126,26 @@ def create_mcp_server() -> tuple[FastMCP, ObsidianPalaceOAuthProvider]:
         """List notes in a vault folder."""
         notes = await list_notes(path)
         return f"Notes in '{path or '/'}':\n" + "\n".join(f"  {n}" for n in notes)
+
+    @mcp.tool(
+        name="notes_for_date",
+        description=(
+            "List all notes last modified on a specific date. "
+            "Date must be in YYYY-MM-DD format."
+        ),
+    )
+    async def notes_for_date_tool(date: str) -> str:
+        """Return vault-relative paths of every note modified on the given date."""
+        from datetime import date as date_type
+
+        try:
+            target = date_type.fromisoformat(date)
+        except ValueError:
+            return f"Invalid date '{date}'. Use YYYY-MM-DD format."
+
+        results = await notes_for_date(target)
+        if not results:
+            return f"No notes found modified on {date}."
+        return f"Notes modified on {date}:\n" + "\n".join(f"  {p}" for p in results)
 
     return mcp, oauth_provider

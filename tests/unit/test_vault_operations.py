@@ -1,5 +1,8 @@
 """Tests for vault file operations."""
 
+import os
+import time
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -7,6 +10,7 @@ import pytest
 from obsidian_palace.vault.operations import (
     list_folders,
     list_notes,
+    notes_for_date,
     read_note,
     write_note,
 )
@@ -67,3 +71,29 @@ class TestListNotes:
     async def test_list_notes_nonexistent_returns_empty(self) -> None:
         notes = await list_notes("nonexistent")
         assert notes == []
+
+
+class TestNotesForDate:
+    async def test_finds_notes_modified_on_date(self, tmp_vault: Path) -> None:
+        target = tmp_vault / "00_Inbox" / "quick-note.md"
+        today = date.today()
+        ts = time.mktime(today.timetuple())
+        os.utime(target, (ts, ts))
+
+        results = await notes_for_date(today)
+        assert "00_Inbox/quick-note.md" in results
+
+    async def test_returns_empty_when_no_matches(self, tmp_vault: Path) -> None:
+        results = await notes_for_date(date(1970, 1, 1))
+        assert results == []
+
+    async def test_skips_hidden_directories(self, tmp_vault: Path) -> None:
+        hidden = tmp_vault / ".obsidian" / "config.md"
+        hidden.parent.mkdir(exist_ok=True)
+        hidden.write_text("hidden")
+        today = date.today()
+        ts = time.mktime(today.timetuple())
+        os.utime(hidden, (ts, ts))
+
+        results = await notes_for_date(today)
+        assert not any(".obsidian" in p for p in results)

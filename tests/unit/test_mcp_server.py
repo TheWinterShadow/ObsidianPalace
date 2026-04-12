@@ -24,7 +24,7 @@ class TestCreateMcpServer:
         mcp, _ = create_mcp_server()
         tools = mcp._tool_manager._tools
         names = set(tools.keys())
-        assert names == {"search_vault", "read_note", "write_note", "list_folders", "list_notes"}
+        assert names == {"search_vault", "read_note", "write_note", "list_folders", "list_notes", "notes_for_date"}
 
 
 class TestToolFunctions:
@@ -79,6 +79,34 @@ class TestToolFunctions:
         result = await mcp_server._tool_manager.call_tool("list_notes", {"path": "00_Inbox"})
         assert isinstance(result, str)
         assert "quick-note.md" in result
+
+    async def test_notes_for_date_found(self, mcp_server, tmp_vault: Path) -> None:
+        import os
+        import time
+        from datetime import date
+
+        target = tmp_vault / "00_Inbox" / "quick-note.md"
+        today = date.today()
+        ts = time.mktime(today.timetuple())
+        os.utime(target, (ts, ts))
+
+        result = await mcp_server._tool_manager.call_tool(
+            "notes_for_date", {"date": today.isoformat()}
+        )
+        assert isinstance(result, str)
+        assert "00_Inbox/quick-note.md" in result
+
+    async def test_notes_for_date_none_found(self, mcp_server) -> None:
+        result = await mcp_server._tool_manager.call_tool(
+            "notes_for_date", {"date": "1970-01-01"}
+        )
+        assert "No notes found" in result
+
+    async def test_notes_for_date_invalid(self, mcp_server) -> None:
+        result = await mcp_server._tool_manager.call_tool(
+            "notes_for_date", {"date": "not-a-date"}
+        )
+        assert "Invalid date" in result
 
     async def test_search_vault_empty(self, mcp_server) -> None:
         with patch("obsidian_palace.mcp.server.search", return_value=[]):

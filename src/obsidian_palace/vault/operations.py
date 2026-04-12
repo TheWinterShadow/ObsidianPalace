@@ -6,6 +6,7 @@ the vault root.
 """
 
 import logging
+from datetime import date
 from pathlib import Path
 
 from obsidian_palace.config import get_settings
@@ -122,3 +123,37 @@ async def list_notes(relative_path: str = "", extensions: tuple[str, ...] = (".m
     return sorted(
         entry.name for entry in target.iterdir() if entry.is_file() and entry.suffix in extensions
     )
+
+
+async def notes_for_date(
+    target_date: date, extensions: tuple[str, ...] = (".md",)
+) -> list[str]:
+    """Find all notes in the vault last modified on a given date.
+
+    Walks the entire vault recursively and returns vault-relative paths
+    for every note whose mtime matches ``target_date``.
+
+    Args:
+        target_date: The calendar date to filter by.
+        extensions: File extensions to include.
+
+    Returns:
+        Sorted list of vault-relative paths (e.g. ``"Daily Notes/2025-04-11.md"``).
+    """
+    settings = get_settings()
+    vault_root = settings.vault_path.resolve()
+
+    results: list[str] = []
+    for p in vault_root.rglob("*"):
+        if not p.is_file():
+            continue
+        if p.suffix not in extensions:
+            continue
+        # Skip hidden directories anywhere in the path
+        if any(part.startswith(".") for part in p.parts):
+            continue
+        mtime_date = date.fromtimestamp(p.stat().st_mtime)
+        if mtime_date == target_date:
+            results.append(str(p.relative_to(vault_root)))
+
+    return sorted(results)
