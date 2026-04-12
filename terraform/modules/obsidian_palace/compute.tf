@@ -77,7 +77,7 @@ locals {
     else
       mount -o discard,defaults "$DEVICE" "$DATA_DIR"
     fi
-    mkdir -p "$DATA_DIR/vault" "$DATA_DIR/chromadb" "$DATA_DIR/obsidian-config"
+    mkdir -p "$DATA_DIR/vault" "$DATA_DIR/chromadb" "$DATA_DIR/obsidian-config" "$DATA_DIR/chroma-cache"
     mkdir -p "$DATA_DIR/letsencrypt" "$DATA_DIR/certbot-webroot" "$DATA_DIR/state"
 
     # --- Pull secrets from Secret Manager ---
@@ -158,6 +158,7 @@ locals {
       -p 80:80 \
       -v "$DATA_DIR/vault:/data/vault" \
       -v "$DATA_DIR/chromadb:/data/chromadb" \
+      -v "$DATA_DIR/chroma-cache:/data/chroma-cache" \
       -v "$DATA_DIR/obsidian-config:/data/obsidian-config" \
       -v "$DATA_DIR/state:/data/state" \
       -v "$CERT_DIR:/etc/letsencrypt:ro" \
@@ -177,19 +178,64 @@ locals {
     log "Container started"
 
     # --- Certbot auto-renewal ---
-    # COS root filesystem is read-only, so /etc/cron.daily is not writable.
-    # Write a renewal script to the data disk and schedule via systemd timer.
-    cat > "$DATA_DIR/certbot-renew.sh" <<'CRON'
+    # COS root filesystem is read-only, but /etc/systemd/system/ is on the
+    # writable stateful partition overlay — units placed there persist across
+    # reboots. We write the renewal script to the data disk and schedule it
+    # with a systemd timer.
+
+    cat > "$DATA_DIR/certbot-renew.sh" <<'RENEW'
     #!/bin/bash
+    set -euo pipefail
+    LOG_TAG="certbot-renew"
+    logger -t "$LOG_TAG" "Starting certificate renewal"
+
     # Stop nginx in the container to free port 80 for certbot standalone.
     docker exec obsidian-palace supervisorctl stop nginx 2>/dev/null || true
-    docker run --rm \
+
+    if docker run --rm \
       -v /mnt/disks/data/letsencrypt:/etc/letsencrypt \
       -p 80:80 \
-      certbot/certbot renew --quiet
+      certbot/certbot renew --quiet; then
+      logger -t "$LOG_TAG" "Certbot renewal succeeded"
+    else
+      logger -t "$LOG_TAG" "Certbot renewal failed (exit $?)"
+    fi
+
     docker exec obsidian-palace supervisorctl start nginx 2>/dev/null || true
-    CRON
+    logger -t "$LOG_TAG" "Renewal complete, nginx restarted"
+    RENEW
     chmod +x "$DATA_DIR/certbot-renew.sh"
+
+    # Systemd service unit for certbot renewal.
+    # printf avoids heredoc indentation issues inside the startup script.
+    printf '%s\n' \
+      '[Unit]' \
+      'Description=Renew Let'"'"'s Encrypt certificates for ObsidianPalace' \
+      'After=docker.service' \
+      '' \
+      '[Service]' \
+      'Type=oneshot' \
+      'ExecStart=/bin/bash /mnt/disks/data/certbot-renew.sh' \
+      > /etc/systemd/system/certbot-renew.service
+
+    # Systemd timer: runs on the 1st and 15th of each month at 03:00 UTC,
+    # with 1h randomized delay to avoid thundering-herd against Let's Encrypt.
+    printf '%s\n' \
+      '[Unit]' \
+      'Description=Twice-monthly certbot renewal timer' \
+      '' \
+      '[Timer]' \
+      'OnCalendar=*-*-01,15 03:00:00' \
+      'RandomizedDelaySec=3600' \
+      'Persistent=true' \
+      '' \
+      '[Install]' \
+      'WantedBy=timers.target' \
+      > /etc/systemd/system/certbot-renew.timer
+
+    systemctl daemon-reload
+    systemctl enable --now certbot-renew.timer
+    log "Certbot renewal timer enabled (1st & 15th monthly)"
 
     log "Startup complete"
   SCRIPT

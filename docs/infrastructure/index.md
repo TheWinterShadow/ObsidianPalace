@@ -114,18 +114,18 @@ check "health" {
 The GCE instance runs a startup script (COS-compatible -- no `apt-get`) that:
 
 1. **Mounts the persistent disk** at `/mnt/disks/data` (formats on first boot)
-2. **Creates data directories** (`vault`, `chromadb`, `obsidian-config`, `letsencrypt`, `certbot-webroot`, `state`)
+2. **Creates data directories** (`vault`, `chromadb`, `chroma-cache`, `obsidian-config`, `letsencrypt`, `certbot-webroot`, `state`)
 3. **Pulls secrets** from Secret Manager via the `gcloud` Docker image (COS has no gcloud on the host)
 4. **Runs certbot in Docker** for Let's Encrypt SSL (first boot only)
 5. **Symlinks certificates** to a stable path the container's nginx config expects
 6. **Configures Docker auth** for Artifact Registry (writes config to the data disk since COS root is read-only)
 7. **Pulls and starts** the Docker container with all env vars and volume mounts
-8. **Writes a cert renewal script** to the data disk for scheduled execution
+8. **Schedules SSL cert renewal** — writes `certbot-renew.sh` to the data disk and installs a persistent systemd timer (twice-monthly at 3 AM UTC)
 
 Inside the container, `entrypoint.sh` runs before supervisord:
 
 1. **Symlinks `~/.obsidian-headless/`** → `/data/obsidian-config/headless/` (persists `ob login` auth token)
 2. **Symlinks `~/.config/obsidian-headless/`** → `/data/obsidian-config/config/` (persists `ob sync-setup` vault config)
 3. **Migrates legacy auth_token** from old paths if present
-4. **Starts a readiness watcher** that logs when vault files appear after sync starts
+4. **Symlinks `~/.cache/chroma`** → `/data/chroma-cache/` (persists the ~79MB ONNX embedding model across deploys)
 5. **Execs supervisord** which starts nginx, `sync-guard.sh` (→ `ob sync`), and the Python MCP server

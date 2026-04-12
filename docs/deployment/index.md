@@ -111,30 +111,32 @@ docker exec obsidian-palace supervisorctl status
 
 ## SSL Certificate Renewal
 
-Let's Encrypt certificates expire every 90 days. The startup script writes a renewal script to the data disk, but you need to schedule it.
+Let's Encrypt certificates expire every 90 days. The GCE startup script automatically schedules renewal via a persistent systemd timer that runs on the 1st and 15th of each month at 3 AM UTC (with up to 1 hour of randomized delay).
+
+The timer survives reboots because `/etc/systemd/system/` on COS lives on the writable stateful partition overlay.
+
+### Verify the timer is active
+
+```bash
+gcloud compute ssh obsidian-palace --zone=us-central1-a --project=YOUR_PROJECT_ID \
+  -- sudo systemctl list-timers certbot-renew.timer
+```
 
 ### Manual renewal
 
-```bash
-# SSH into the instance
-gcloud compute ssh obsidian-palace --zone=us-central1-a --project=YOUR_PROJECT_ID
-
-# Run the certbot renewal
-bash /mnt/disks/data/certbot-renew.sh
-```
-
-### Automated renewal via cron
-
-On Container-Optimized OS, the root filesystem is read-only. Use `systemd-run` to schedule a recurring timer:
+If you need to renew immediately:
 
 ```bash
-# SSH into the instance, then:
-sudo systemd-run --on-calendar="*-*-01,15 03:00:00" \
-  --unit=certbot-renew \
-  /bin/bash /mnt/disks/data/certbot-renew.sh
+gcloud compute ssh obsidian-palace --zone=us-central1-a --project=YOUR_PROJECT_ID \
+  -- sudo systemctl start certbot-renew.service
 ```
 
-This runs certbot on the 1st and 15th of each month at 3 AM.
+Check the result:
+
+```bash
+gcloud compute ssh obsidian-palace --zone=us-central1-a --project=YOUR_PROJECT_ID \
+  -- sudo journalctl -t certbot-renew --since today
+```
 
 ---
 
@@ -205,6 +207,7 @@ terraform {
 |------|----------|-------------|
 | `/mnt/disks/data/vault/` | Your Obsidian vault files | Yes -- re-synced from Obsidian Sync |
 | `/mnt/disks/data/chromadb/` | Semantic search index | Yes -- rebuilt on startup |
+| `/mnt/disks/data/chroma-cache/` | ONNX embedding model (~79MB) | Yes -- re-downloaded on first use |
 | `/mnt/disks/data/obsidian-config/headless/` | `ob login` auth token | No -- requires interactive `ob login` |
 | `/mnt/disks/data/obsidian-config/config/sync/<vault-id>/` | `ob sync-setup` vault config | No -- requires interactive `ob sync-setup` |
 | `/mnt/disks/data/letsencrypt/` | SSL certificates | Yes -- re-issued by certbot |
