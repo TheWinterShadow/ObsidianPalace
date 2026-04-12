@@ -38,9 +38,10 @@ COPY supervisord.conf /etc/supervisor/conf.d/obsidian-palace.conf
 # Nginx config
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# Entrypoint script
+# Entrypoint and sync guard scripts
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+COPY sync-guard.sh /app/sync-guard.sh
+RUN chmod +x /app/entrypoint.sh /app/sync-guard.sh
 
 # Data directories (mounted as persistent disk in production)
 RUN mkdir -p /data/vault /data/chromadb /var/www/certbot
