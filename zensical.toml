@@ -2,7 +2,7 @@
 
 [project]
 site_name = "ObsidianPalace"
-site_url = "https://thewintershadow.github.io/ObsidianPalace"
+site_url = "https://obsidian-palace.thewintershadow.com"
 site_description = "MCP server bridging Obsidian vaults with AI via semantic search and bidirectional sync."
 site_author = "TheWinterShadow"
 copyright = "Copyright &copy; 2026 TheWinterShadow &mdash; MIT License"
