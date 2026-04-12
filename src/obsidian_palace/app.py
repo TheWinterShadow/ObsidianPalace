@@ -10,6 +10,7 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -20,16 +21,55 @@ from obsidian_palace.mcp.transport import create_mcp_app, get_streamable_session
 logger = logging.getLogger(__name__)
 
 
-async def _run_indexing() -> None:
-    """Background task: index the vault and start the file watcher.
+async def _wait_for_vault_files(vault_path: Path, timeout: float = 120.0) -> int:
+    """Wait for markdown files to appear in the vault.
 
-    Runs after server startup so the health endpoint and MCP transport
-    are available immediately. Search returns empty results until
-    indexing completes, which is acceptable.
+    On fresh container starts, ``ob sync`` populates the vault concurrently
+    with the MCP server. This function polls the vault directory for ``.md``
+    files so the initial index runs after sync has written content, rather
+    than indexing an empty directory.
+
+    Args:
+        vault_path: Absolute path to the vault root.
+        timeout: Maximum seconds to wait before proceeding anyway.
+
+    Returns:
+        Number of ``.md`` files found when the wait ended.
+    """
+    interval = 3.0
+    elapsed = 0.0
+    count = 0
+
+    while elapsed < timeout:
+        count = sum(
+            1
+            for _ in vault_path.rglob("*.md")
+            if not any(part.startswith(".") for part in _.relative_to(vault_path).parts)
+        )
+        if count > 0:
+            logger.info("Vault has %d .md files — proceeding with indexing", count)
+            return count
+        await asyncio.sleep(interval)
+        elapsed += interval
+
+    logger.warning("Vault still empty after %.0fs — proceeding with indexing anyway", timeout)
+    return count
+
+
+async def _run_indexing() -> None:
+    """Background task: wait for vault content, index, and start the file watcher.
+
+    Waits for ``ob sync`` to populate the vault before running the initial
+    full-vault index. The file watcher then handles incremental changes.
+    Search returns empty results until the initial index completes, which
+    is acceptable since the server starts immediately.
     """
     try:
         from obsidian_palace.search.indexer import index_vault
         from obsidian_palace.search.watcher import watch_vault
+
+        settings = get_settings()
+        await _wait_for_vault_files(settings.vault_path.resolve())
 
         files, drawers = await index_vault()
         logger.info(

@@ -217,16 +217,16 @@ docker exec obsidian-palace cat /proc/meminfo | head -5
 
 **Cause**: MemPalace/ChromaDB uses an ONNX embedding model (~79MB) that is downloaded from the internet on first use. This happens inside `index_vault()` during the background indexing task.
 
-**Workaround**: The model is cached in ChromaDB's data directory (`/data/chromadb/`), which lives on the persistent disk. Once downloaded, it persists across container restarts. However, if you delete the ChromaDB directory or recreate the persistent disk, the model will be re-downloaded.
+**Current behavior**: The model is cached on the persistent disk at `/data/chroma-cache/onnx_models/`. The container's `entrypoint.sh` symlinks `/root/.cache/chroma` → `/data/chroma-cache/` so the model survives container rebuilds and redeploys. The first boot after creating a new persistent disk still downloads the model, but all subsequent deploys reuse the cached copy.
 
 ```bash
 # Verify the model is cached
-docker exec obsidian-palace ls -la /data/chromadb/
-# Look for onnx_models/ or similar cache directory
+docker exec obsidian-palace ls -la /data/chroma-cache/onnx_models/
+# Should show: all-MiniLM-L6-v2/
 ```
 
-!!! tip "Future optimization"
-    A future improvement would be to bake the ONNX model into the Docker image or download it during the image build step. This eliminates the cold-start penalty entirely.
+!!! note "If the model re-downloads on every deploy"
+    Verify the symlink exists: `docker exec obsidian-palace ls -la /root/.cache/chroma`. It should point to `/data/chroma-cache`. If it's missing, the entrypoint may have failed — check `docker logs obsidian-palace | head -30`.
 
 ---
 
@@ -358,7 +358,7 @@ mount | grep /mnt/disks/data
 # Should show: /dev/sdb on /mnt/disks/data type ext4 (rw,relatime)
 
 ls /mnt/disks/data/
-# Expected directories: vault/ chromadb/ obsidian-config/ letsencrypt/ certbot-webroot/ docker-config/ state/
+# Expected directories: vault/ chromadb/ chroma-cache/ obsidian-config/ letsencrypt/ certbot-webroot/ docker-config/ state/
 ```
 
 If the disk isn't mounted, the startup script should handle it. Re-run:

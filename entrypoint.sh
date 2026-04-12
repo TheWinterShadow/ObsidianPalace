@@ -1,8 +1,9 @@
 #!/bin/bash
 # ObsidianPalace container entrypoint.
 # 1. Links persisted Obsidian CLI state directories from the data disk.
-# 2. Ensures data directories exist.
-# 3. Execs supervisord to manage all processes.
+# 2. Links ONNX embedding model cache from the data disk.
+# 3. Ensures data directories exist.
+# 4. Execs supervisord to manage all processes.
 #
 # Sync safety checks (credentials, config, vault file count) are handled
 # by sync-guard.sh, which supervisord calls instead of ob sync directly.
@@ -54,31 +55,16 @@ if [ -f "$PERSISTED_CONFIG/auth_token" ] && [ ! -f "$PERSISTED_CONFIG/headless/a
 fi
 
 # --- Ensure data directories exist ---
-mkdir -p /data/vault /data/chromadb
+mkdir -p /data/vault /data/chromadb /data/chroma-cache
 
-# --- Create sync-readiness flag path ---
-# sync-guard.sh + ob sync will run via supervisord. This background watcher
-# creates a marker file once .md files exist in the vault, signaling that the
-# MCP server can serve content. Times out and proceeds anyway so the server
-# always starts (it can still serve from whatever is on disk).
-SYNC_READY_FLAG="/tmp/obsidian-sync-ready"
-rm -f "$SYNC_READY_FLAG"
-
-(
-    TIMEOUT=120
-    ELAPSED=0
-    while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-        if find /data/vault -name "*.md" -print -quit 2>/dev/null | grep -q .; then
-            touch "$SYNC_READY_FLAG"
-            log "Vault sync ready — .md files detected"
-            exit 0
-        fi
-        sleep 2
-        ELAPSED=$((ELAPSED + 2))
-    done
-    touch "$SYNC_READY_FLAG"
-    log "WARNING: Sync readiness timed out after ${TIMEOUT}s — proceeding anyway"
-) &
+# --- Persist ONNX embedding model cache ---
+# ChromaDB's default embedding function (ONNXMiniLM_L6_V2) downloads a ~79MB
+# model to ~/.cache/chroma/onnx_models/ on first use. On an ephemeral container
+# filesystem this means re-downloading on every deploy. Symlink to the persistent
+# disk so the model survives container rebuilds.
+mkdir -p /root/.cache
+ln -sfn /data/chroma-cache /root/.cache/chroma
+log "ONNX model cache linked to /data/chroma-cache/"
 
 log "Starting supervisord"
 exec supervisord -n -c /etc/supervisor/supervisord.conf
