@@ -23,7 +23,7 @@ set -euo pipefail
 
 VAULT_PATH="/data/vault"
 PERSISTED_CONFIG="/data/obsidian-config"
-MIN_VAULT_FILES="${OBSIDIAN_PALACE_MIN_VAULT_FILES:-10}"
+MIN_VAULT_FILES="${OBSIDIAN_PALACE_MIN_VAULT_FILES:-400}"
 
 log() { echo "[sync-guard] $(date -u '+%Y-%m-%dT%H:%M:%SZ') $*"; }
 
