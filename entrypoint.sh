@@ -1,6 +1,6 @@
 #!/bin/bash
 # ObsidianPalace container entrypoint.
-# 1. Links persisted Obsidian Sync credentials from the data disk.
+# 1. Links persisted Obsidian CLI state directories from the data disk.
 # 2. Ensures data directories exist.
 # 3. Execs supervisord to manage all processes.
 #
@@ -11,21 +11,46 @@ set -euo pipefail
 
 log() { echo "[entrypoint] $(date -u '+%Y-%m-%dT%H:%M:%SZ') $*"; }
 
-# --- Link Obsidian Sync credentials ---
-# ob CLI expects ~/.obsidian-headless/auth_token. The auth_token is persisted
-# on the data disk at /data/obsidian-config/ (survives container restarts).
-# Initial setup requires a one-time manual `ob login` inside the container.
-OBSIDIAN_CONFIG_DIR="/root/.obsidian-headless"
+# --- Persist Obsidian CLI state directories ---
+# The ob CLI uses TWO config directories:
+#   ~/.obsidian-headless/auth_token    — written by `ob login`
+#   ~/.config/obsidian-headless/       — written by `ob sync-setup` (vault config)
+#
+# Both live on ephemeral container filesystem by default. We symlink them to
+# the persistent data disk so they survive container restarts and deploys.
 PERSISTED_CONFIG="/data/obsidian-config"
 
-mkdir -p "$PERSISTED_CONFIG"
-ln -sfn "$PERSISTED_CONFIG" "$OBSIDIAN_CONFIG_DIR"
+# 1. ~/.obsidian-headless/ → /data/obsidian-config/headless/
+mkdir -p "$PERSISTED_CONFIG/headless"
+ln -sfn "$PERSISTED_CONFIG/headless" "/root/.obsidian-headless"
 
-if [ -f "$PERSISTED_CONFIG/auth_token" ]; then
-    log "Obsidian Sync credentials linked from $PERSISTED_CONFIG"
+if [ -f "$PERSISTED_CONFIG/headless/auth_token" ]; then
+    log "ob login credentials linked from $PERSISTED_CONFIG/headless/"
 else
-    log "WARNING: No auth_token found — sync-guard.sh will block ob sync"
-    log "Run 'docker exec -it obsidian-palace ob login' to authenticate"
+    log "WARNING: No auth_token found — run 'docker exec -it obsidian-palace ob login'"
+fi
+
+# 2. ~/.config/obsidian-headless/ → /data/obsidian-config/config/
+#    This is where ob sync-setup writes vault sync configuration
+#    (e.g. sync/<vault-id>/config.json). Without this, every container
+#    restart requires a manual ob sync-setup — which was the root cause
+#    of repeated vault wipe incidents.
+mkdir -p "$PERSISTED_CONFIG/config" "/root/.config"
+ln -sfn "$PERSISTED_CONFIG/config" "/root/.config/obsidian-headless"
+
+SYNC_CONFIG="$PERSISTED_CONFIG/config/sync"
+if [ -d "$SYNC_CONFIG" ] && [ "$(find "$SYNC_CONFIG" -name 'config.json' -type f 2>/dev/null | wc -l)" -gt 0 ]; then
+    log "ob sync-setup config linked from $PERSISTED_CONFIG/config/"
+else
+    log "WARNING: No sync config found — run 'docker exec -it obsidian-palace ob sync-setup --vault <VAULT_ID> --path /data/vault'"
+fi
+
+# --- Migrate legacy config layout ---
+# Previous versions stored auth_token directly in /data/obsidian-config/.
+# Move it to the new headless/ subdirectory if found.
+if [ -f "$PERSISTED_CONFIG/auth_token" ] && [ ! -f "$PERSISTED_CONFIG/headless/auth_token" ]; then
+    log "Migrating legacy auth_token to new layout"
+    mv "$PERSISTED_CONFIG/auth_token" "$PERSISTED_CONFIG/headless/auth_token"
 fi
 
 # --- Ensure data directories exist ---
