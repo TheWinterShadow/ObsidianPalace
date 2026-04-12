@@ -4,11 +4,11 @@
 
 # ObsidianPalace
 
-MCP server that gives AI clients (Claude Desktop, Claude Code, claude.ai) full read/write/search access to your Obsidian vault.
+MCP server that gives AI clients (Claude Desktop, Claude Code, OpenCode, claude.ai) full read/write/search access to your Obsidian vault.
 
 ## What It Does
 
-ObsidianPalace bridges your Obsidian vault with AI via the [Model Context Protocol](https://modelcontextprotocol.io/). It runs as a single Docker container on a GCE instance (~$15/mo) and exposes five MCP tools:
+ObsidianPalace bridges your Obsidian vault with AI via the [Model Context Protocol](https://modelcontextprotocol.io/). It runs as a single Docker container on a GCE instance (~$15/mo) and exposes five MCP tools over both SSE and Streamable HTTP transports:
 
 | Tool | Description |
 |------|-------------|
@@ -21,22 +21,23 @@ ObsidianPalace bridges your Obsidian vault with AI via the [Model Context Protoc
 ## How It Works
 
 ```
-Claude Desktop / Code / Web
-        │
-        │  MCP over SSE (OAuth 2.1)
-        ▼
-┌─────────────────────────────────┐
-│  ObsidianPalace (Docker)        │
-│                                 │
-│  nginx ─► FastAPI + MCP SDK     │
-│           ├── MemPalace/ChromaDB│  ◄── semantic search
-│           └── Anthropic API     │  ◄── AI file placement
-│                                 │
-│  ob sync --continuous           │  ◄── bidirectional Obsidian Sync
-└─────────────────────────────────┘
+Claude Desktop / Code / Web / OpenCode
+        |
+        |  MCP over SSE (/sse) or Streamable HTTP (/mcp)
+        v
++----------------------------------+
+|  ObsidianPalace (Docker)         |
+|                                  |
+|  nginx --> FastAPI + MCP SDK     |
+|            +-- MemPalace/ChromaDB|  <-- semantic search
+|            +-- Anthropic API     |  <-- AI file placement
+|                                  |
+|  sync-guard.sh --> ob sync       |  <-- bidirectional Obsidian Sync
++----------------------------------+
 ```
 
 - **Obsidian Headless CLI** (`ob sync --continuous`) keeps the vault in bidirectional sync with Obsidian Sync
+- **sync-guard.sh** enforces three safety gates before sync starts: auth credentials, sync config, and vault file count (prevents empty vault from propagating deletions)
 - **MemPalace** (ChromaDB) provides semantic search over all vault content
 - **AI Placement** uses Claude to decide where new notes belong in your vault structure
 - **Google OAuth 2.0** authenticates requests via the MCP OAuth 2.1 specification
@@ -48,6 +49,21 @@ Claude Desktop / Code / Web
 
 ```bash
 claude mcp add obsidian-palace --transport sse https://your-domain.com/sse
+```
+
+### Connect with OpenCode
+
+Add to `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "mcp": {
+    "obsidian-palace": {
+      "type": "remote",
+      "url": "https://your-domain.com/mcp"
+    }
+  }
+}
 ```
 
 ### Local Development
@@ -82,20 +98,25 @@ See the **[Setup Guide](docs/setup/index.md)** for a complete walkthrough coveri
 
 ```
 src/obsidian_palace/
-├── app.py              # FastAPI application, health endpoint, MCP mount
+├── app.py              # FastAPI application, health endpoint, MCP mount, lifespan
 ├── config.py           # Pydantic Settings (OBSIDIAN_PALACE_ prefix)
 ├── auth/
 │   └── mcp_oauth.py    # OAuth 2.1 server with Google delegation
 ├── mcp/
 │   ├── server.py       # MCP tool definitions
-│   └── transport.py    # SSE transport + OAuth callback
+│   └── transport.py    # SSE + Streamable HTTP transports, OAuth callback
 ├── vault/
 │   ├── operations.py   # Path-safe file read/write/list
 │   └── placement.py    # AI-assisted file placement via Claude
 └── search/
     ├── searcher.py     # MemPalace search wrapper
     ├── indexer.py      # Vault content indexer
-    └── watcher.py      # File watcher for re-indexing
+    └── watcher.py      # File watcher for incremental re-indexing
+
+entrypoint.sh           # Container entrypoint (persists ob CLI config, execs supervisord)
+sync-guard.sh           # Safety gates before ob sync starts
+supervisord.conf        # Process definitions (nginx, obsidian-sync, mcp-server)
+nginx.conf              # SSL termination, reverse proxy
 
 terraform/
 ├── environments/prod/  # Root module (backend, variables, outputs)
@@ -108,7 +129,7 @@ terraform/
 |---------|--------|
 | Language | Python 3.12 |
 | Framework | FastAPI + uvicorn |
-| MCP | `mcp[server]` SDK, SSE transport |
+| MCP | `mcp[server]` SDK, SSE + Streamable HTTP |
 | Search | MemPalace (ChromaDB) |
 | Sync | obsidian-headless (`ob sync`) |
 | Auth | Google OAuth 2.0 (MCP OAuth 2.1 spec) |
