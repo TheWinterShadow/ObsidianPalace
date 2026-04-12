@@ -158,7 +158,7 @@ locals {
       -p 80:80 \
       -v "$DATA_DIR/vault:/data/vault" \
       -v "$DATA_DIR/chromadb:/data/chromadb" \
-      -v "$DATA_DIR/obsidian-config:/data/obsidian-config:ro" \
+      -v "$DATA_DIR/obsidian-config:/data/obsidian-config" \
       -v "$DATA_DIR/state:/data/state" \
       -v "$CERT_DIR:/etc/letsencrypt:ro" \
       -v "$DATA_DIR/certbot-webroot:/var/www/certbot" \
