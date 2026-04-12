@@ -15,7 +15,7 @@ from fastapi import FastAPI
 
 from obsidian_palace.__about__ import __version__
 from obsidian_palace.config import get_settings
-from obsidian_palace.mcp.transport import create_mcp_app
+from obsidian_palace.mcp.transport import create_mcp_app, get_streamable_session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         logger.info("MemPalace disabled via configuration")
 
+    # Start the Streamable HTTP session manager's task group.
+    # Without this, /mcp requests fail with "Task group is not initialized".
+    session_manager = get_streamable_session_manager()
+    sm_ctx = None
+    if session_manager is not None:
+        sm_ctx = session_manager.run()
+        await sm_ctx.__aenter__()
+        logger.info("Streamable HTTP session manager started")
+
     yield
+
+    # Shutdown: stop the session manager.
+    if sm_ctx is not None:
+        await sm_ctx.__aexit__(None, None, None)
+        logger.info("Streamable HTTP session manager stopped")
 
     # Shutdown: cancel the background indexing/watcher task.
     if indexing_task is not None:

@@ -27,6 +27,19 @@ from obsidian_palace.mcp.server import create_mcp_server
 
 logger = logging.getLogger(__name__)
 
+# Module-level reference so the FastAPI lifespan can manage its lifecycle.
+_streamable_session_manager: StreamableHTTPSessionManager | None = None
+
+
+def get_streamable_session_manager() -> StreamableHTTPSessionManager | None:
+    """Return the Streamable HTTP session manager (if created).
+
+    The FastAPI lifespan must call ``session_manager.run()`` as an async
+    context manager so the internal task group is initialized before any
+    ``/mcp`` requests arrive.
+    """
+    return _streamable_session_manager
+
 
 def create_mcp_app() -> Starlette:
     """Build the MCP Starlette app with SSE + Streamable HTTP transports.
@@ -56,13 +69,21 @@ def _add_streamable_http_route(app: Starlette, mcp: "FastMCP") -> None:  # noqa:
     underlying ``MCPServer`` as the SSE transport.  The ``/mcp`` route is
     wrapped with the same ``RequireAuthMiddleware`` so OAuth tokens work
     identically on both transports.
+
+    The session manager is stored in ``_streamable_session_manager`` so the
+    FastAPI lifespan can call ``session_manager.run()`` during startup.
+    Without this, ``/mcp`` requests fail with "Task group is not initialized".
     """
+    global _streamable_session_manager  # noqa: PLW0603
+
     session_manager = StreamableHTTPSessionManager(
         app=mcp._mcp_server,
         stateless=mcp.settings.stateless_http,
         json_response=mcp.settings.json_response,
         security_settings=mcp.settings.transport_security,
     )
+    _streamable_session_manager = session_manager
+
     http_handler = StreamableHTTPASGIApp(session_manager)
 
     # Wrap with auth if configured (mirrors what streamable_http_app() does)
