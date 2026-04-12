@@ -20,7 +20,6 @@ from obsidian_palace.vault.operations import (
     read_note,
     write_note,
 )
-from obsidian_palace.vault.placement import determine_placement
 
 logger = logging.getLogger(__name__)
 
@@ -101,12 +100,10 @@ def create_mcp_server() -> tuple[FastMCP, ObsidianPalaceOAuthProvider]:
     )
     async def write_note_tool(
         content: str,
-        path: str | None = None,
         title: str | None = None,
     ) -> str:
         """Write a note, optionally using AI placement."""
-        if not path:
-            path = await determine_placement(content, title=title)
+        path = f"00_Inbox/{title or 'untitled'}.md"
 
         written_path = await write_note(path, content)
         return f"Note written to: {path}\nAbsolute path: {written_path}"
