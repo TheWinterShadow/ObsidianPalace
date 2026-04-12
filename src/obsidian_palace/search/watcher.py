@@ -20,7 +20,9 @@ def _should_index(path: str, vault_path: Path) -> bool:
     """Check whether a changed file should be indexed.
 
     Filters to markdown files and excludes hidden directories
-    (.obsidian, .git, .trash, etc.).
+    (.obsidian, .git, .trash, etc.). Also used as the ``watch_filter``
+    for ``awatch`` so that watchfiles itself skips irrelevant events
+    (preventing "N changes detected" log spam from ob sync writes).
 
     Args:
         path: Absolute path string from the watch event.
@@ -39,6 +41,22 @@ def _should_index(path: str, vault_path: Path) -> bool:
 
     # Skip hidden directories
     return not any(part.startswith(".") for part in relative.parts)
+
+
+def _make_watch_filter(vault_path: Path):
+    """Create a watch filter function for ``awatch``.
+
+    Returns a callable that ``watchfiles`` invokes for every raw
+    filesystem event *before* logging or yielding it. Returning
+    ``False`` suppresses the event entirely, which eliminates the
+    "N changes detected" log noise from non-markdown writes
+    (e.g. ob sync updating ``.obsidian/`` state files).
+    """
+
+    def watch_filter(change: Change, path: str) -> bool:  # noqa: ARG001
+        return _should_index(path, vault_path)
+
+    return watch_filter
 
 
 async def watch_vault() -> None:
@@ -61,11 +79,9 @@ async def watch_vault() -> None:
     vault_path = settings.vault_path.resolve()
     logger.info("Starting vault file watcher: %s", vault_path)
 
-    async for changes in awatch(vault_path):
+    watch_filter = _make_watch_filter(vault_path)
+    async for changes in awatch(vault_path, watch_filter=watch_filter):
         for change_type, path in changes:
-            if not _should_index(path, vault_path):
-                continue
-
             relative = Path(path).relative_to(vault_path)
 
             if change_type in (Change.added, Change.modified):
