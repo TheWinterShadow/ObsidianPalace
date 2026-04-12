@@ -78,7 +78,7 @@ locals {
       mount -o discard,defaults "$DEVICE" "$DATA_DIR"
     fi
     mkdir -p "$DATA_DIR/vault" "$DATA_DIR/chromadb" "$DATA_DIR/obsidian-config"
-    mkdir -p "$DATA_DIR/letsencrypt" "$DATA_DIR/certbot-webroot"
+    mkdir -p "$DATA_DIR/letsencrypt" "$DATA_DIR/certbot-webroot" "$DATA_DIR/state"
 
     # --- Pull secrets from Secret Manager ---
     # COS has no gcloud on the host; use the cloud-sdk Docker image.
@@ -159,6 +159,7 @@ locals {
       -v "$DATA_DIR/vault:/data/vault" \
       -v "$DATA_DIR/chromadb:/data/chromadb" \
       -v "$DATA_DIR/obsidian-config:/data/obsidian-config:ro" \
+      -v "$DATA_DIR/state:/data/state" \
       -v "$CERT_DIR:/etc/letsencrypt:ro" \
       -v "$DATA_DIR/certbot-webroot:/var/www/certbot" \
       -e OBSIDIAN_PALACE_GOOGLE_CLIENT_ID="$OAUTH_CLIENT_ID" \
@@ -167,6 +168,8 @@ locals {
       -e OBSIDIAN_PALACE_ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
       -e OBSIDIAN_PALACE_VAULT_PATH="/data/vault" \
       -e OBSIDIAN_PALACE_CHROMADB_PATH="/data/chromadb" \
+      -e OBSIDIAN_PALACE_OAUTH_STATE_PATH="/data/state/oauth_state.json" \
+      -e OBSIDIAN_PALACE_SERVER_URL="https://${var.domain}" \
       -e OBSIDIAN_PALACE_HOST="0.0.0.0" \
       -e OBSIDIAN_PALACE_PORT="8080" \
       ${var.container_image}
