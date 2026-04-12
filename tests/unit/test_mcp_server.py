@@ -24,7 +24,9 @@ class TestCreateMcpServer:
         mcp, _ = create_mcp_server()
         tools = mcp._tool_manager._tools
         names = set(tools.keys())
-        assert names == {"search_vault", "read_note", "write_note", "list_folders", "list_notes", "notes_for_date"}
+        assert names == {
+            "search_vault", "read_note", "write_note", "list_folders", "list_notes", "notes_for_date"
+        }
 
 
 class TestToolFunctions:
