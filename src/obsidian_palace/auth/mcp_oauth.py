@@ -28,6 +28,8 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
@@ -474,7 +476,24 @@ class ObsidianPalaceOAuthProvider(
     # ------------------------------------------------------------------
 
     async def load_access_token(self, token: str) -> AccessToken | None:
-        """Validate a bearer token from an MCP request."""
+        """Validate a bearer token from an MCP request.
+
+        Supports two token types:
+        1. GCP-signed OIDC identity tokens (JWTs) — for service-to-service auth
+           from trusted GCP workloads (e.g., Cloud Run). Verified against Google's
+           JWKS and checked against the allowed_service_accounts allowlist.
+        2. Self-issued opaque tokens — the standard MCP OAuth flow.
+        """
+        # --- Path 1: GCP identity token (JWT) ---
+        if token.count(".") == 2:
+            access_token = await self._verify_gcp_identity_token(token)
+            if access_token is not None:
+                return access_token
+            # Not a valid GCP token — fall through to opaque token lookup.
+            # (Don't log at warning level here; it could just be a malformed
+            # opaque token that happens to contain dots, or an expired JWT.)
+
+        # --- Path 2: Self-issued opaque token ---
         access_token = self._access_tokens.get(token)
         if access_token is None:
             return None
@@ -484,6 +503,49 @@ class ObsidianPalaceOAuthProvider(
             self._save_state()
             return None
         return access_token
+
+    async def _verify_gcp_identity_token(self, token: str) -> AccessToken | None:
+        """Verify a Google-signed OIDC identity token for service-to-service auth.
+
+        Args:
+            token: A JWT from GCP's metadata server (fetched via
+                ``google.oauth2.id_token.fetch_id_token``).
+
+        Returns:
+            A synthetic AccessToken if the token is valid and the caller's
+            service account is in the allowlist, or None otherwise.
+        """
+        settings = get_settings()
+
+        if not settings.allowed_service_accounts:
+            return None
+
+        try:
+            claims = google_id_token.verify_oauth2_token(
+                token,
+                google_requests.Request(),
+                audience=settings.server_url.rstrip("/"),
+            )
+        except Exception as exc:
+            logger.debug("GCP identity token verification failed: %s", exc)
+            return None
+
+        email = claims.get("email", "")
+        if email not in settings.allowed_service_accounts:
+            logger.warning(
+                "GCP identity token from %s rejected — not in allowed_service_accounts",
+                email,
+            )
+            return None
+
+        logger.info("GCP service-to-service auth accepted for: %s", email)
+
+        return AccessToken(
+            token=token,
+            client_id=f"gcp-service:{email}",
+            scopes=["full_access"],
+            expires_at=claims.get("exp"),
+        )
 
     # ------------------------------------------------------------------
     # Revocation

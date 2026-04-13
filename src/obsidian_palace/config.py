@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # --- AI Placement ---
     anthropic_api_key: str = ""
 
+    # --- GCP Service-to-Service Auth ---
+    # Comma-separated list of GCP service account emails allowed to
+    # authenticate via Google-signed OIDC identity tokens (no OAuth flow).
+    allowed_service_accounts: list[str] = []
+
     # --- Server ---
     host: str = "0.0.0.0"
     port: int = 8080
