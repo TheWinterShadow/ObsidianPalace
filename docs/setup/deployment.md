@@ -308,12 +308,12 @@ Before `ob sync` starts, `sync-guard.sh` checks three conditions:
 
 1. **Auth token exists** -- verifies `/data/obsidian-config/headless/auth_token` is present
 2. **Sync config exists** -- verifies at least one `config.json` exists under `/data/obsidian-config/config/sync/`
-3. **Vault file count** -- counts `.md` files in `/data/vault` and blocks sync if below the safety threshold (default: 400)
+3. **Vault file count** -- compares `.md` files in `/data/vault` against a percentage of the last known good count (stored in `/data/state/last_vault_count`). On first boot, falls back to an absolute minimum floor of 1500 files.
 
-The file count gate prevents a scenario where an empty or corrupted vault tells Obsidian Sync "I have no files," causing deletions to propagate to all connected devices (phones, desktops, etc.).
+The file count gate prevents a scenario where an empty or corrupted vault tells Obsidian Sync "I have no files," causing deletions to propagate to all connected devices (phones, desktops, etc.). The threshold adapts automatically as the vault grows -- no manual tuning needed.
 
 !!! tip "Adjusting the file count threshold"
-    The default minimum is 400 `.md` files. If your vault is smaller, set the `OBSIDIAN_PALACE_MIN_VAULT_FILES` environment variable to an appropriate value. Set it close to your actual vault size for the best protection.
+    The default threshold is 80% of the last known good count. To change this, set the `OBSIDIAN_PALACE_MIN_VAULT_PERCENT` environment variable (e.g., `70` for 70%). If a large reorganization legitimately removes many files, delete the state file (`/data/state/last_vault_count`) to reset.
 
 ---
 

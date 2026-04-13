@@ -160,7 +160,7 @@ docker exec obsidian-palace supervisorctl start obsidian-sync
 |---------|-------|-----|
 | `auth_token not found` | Token missing or symlink broken | Re-run `ob login` |
 | `No sync config found` / Gate 2 blocked | Sync config missing | Re-run `ob sync-setup` |
-| `Vault has fewer than N .md files` / Gate 3 blocked | Vault empty or below threshold | Check vault content; adjust `OBSIDIAN_PALACE_MIN_VAULT_FILES` if vault is genuinely small |
+| `Vault has N files, expected at least M` / Gate 3 blocked | Vault below percentage of last known good count | Check vault content; delete `/data/state/last_vault_count` to reset, or lower `OBSIDIAN_PALACE_MIN_VAULT_PERCENT` (default: 80) |
 | `network error` / `ECONNREFUSED` | Obsidian Sync servers unreachable | Check instance egress; try again later |
 | Sync starts but no files appear | Wrong vault ID or empty vault | Verify vault ID with `ob list-vaults` |
 | `FATAL` on startup, immediate exit | Auth token expired | Re-run `ob login` (tokens expire after extended periods) |
