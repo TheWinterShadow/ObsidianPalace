@@ -95,8 +95,8 @@ def create_mcp_server() -> tuple[FastMCP, ObsidianPalaceOAuthProvider]:
         name="write_note",
         description=(
             "Write or update a note in the Obsidian vault. "
-            "If no path is specified, AI determines the best location "
-            "based on vault structure and content."
+            "All notes are written to the '00_Inbox' folder by default. "
+            "Optionally include a title to name the note; otherwise it will be 'untitled.md'."
         ),
     )
     async def write_note_tool(
