@@ -147,4 +147,34 @@ def create_mcp_server() -> tuple[FastMCP, ObsidianPalaceOAuthProvider]:
             return f"No notes found modified on {date}."
         return f"Notes modified on {date}:\n" + "\n".join(f"  {p}" for p in results)
 
+    _CODING_GUIDES_PATH = "30_Knowledge/Coding Guides"
+
+    @mcp.tool(
+        name="coding_guidance",
+        description=(
+            "Search coding best practices and guides from the vault. "
+            "Looks up language-specific conventions, architecture patterns, tooling preferences, "
+            "and development standards stored in '30_Knowledge/Coding Guides'. "
+            "Returns the full content of matching guides ranked by relevance."
+        ),
+    )
+    async def coding_guidance_tool(query: str, limit: int = 5) -> str:
+        """Search coding guides by semantic similarity and return full note content."""
+        # Search broadly so guides aren't crowded out by higher-scoring vault content
+        all_results = await search(query, limit=50)
+        results = [r for r in all_results if r.source_path.startswith(_CODING_GUIDES_PATH)][:limit]
+
+        if not results:
+            available = await list_notes(_CODING_GUIDES_PATH)
+            if not available:
+                return f"No coding guides found in '{_CODING_GUIDES_PATH}'."
+            guide_list = "\n".join(f"  {_CODING_GUIDES_PATH}/{n}" for n in available)
+            return f"No guides matched '{query}'. Available coding guides:\n{guide_list}"
+
+        parts = [f"Found {len(results)} coding guide(s) for '{query}':\n"]
+        for r in results:
+            content = await read_note(r.source_path)
+            parts.append(f"---\n## {r.source_path} (score: {r.score:.3f})\n\n{content}")
+        return "\n\n".join(parts)
+
     return mcp, oauth_provider
