@@ -11,16 +11,18 @@ import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 from obsidian_palace.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Number of concurrent worker threads for vault indexing.
+# The ChromaDB collection object is initialized once and shared;
+# collection.upsert() is safe for concurrent use.
+_INDEX_WORKERS = 4
+
 # Default room configuration for the Obsidian vault.
-# Room routing in MemPalace works by matching folder names, filenames,
-# and content keywords (first 2000 chars). Folder-name matching is
-# priority 1, so these room names are chosen to align with typical
-# vault top-level directories.
 DEFAULT_ROOMS: list[dict] = [
     {
         "name": "daily_notes",
@@ -54,11 +56,13 @@ DEFAULT_ROOMS: list[dict] = [
     },
 ]
 
-_INDEX_WORKERS = 4
 
-
-def _get_collection():
+def _get_collection() -> Any:
     """Get or create the ChromaDB collection for the vault.
+
+    Must be called from a single thread before passing the returned
+    collection to concurrent workers. ChromaDB's PersistentClient
+    is not safe to initialize from multiple threads simultaneously.
 
     Returns:
         A ``chromadb.Collection`` instance.
@@ -72,7 +76,7 @@ def _get_collection():
     )
 
 
-def _index_file_sync(filepath: Path, vault_path: Path, wing: str) -> int:
+def _index_file_sync(filepath: Path, vault_path: Path, wing: str, collection: Any) -> int:
     """Index a single markdown file into the palace. Synchronous.
 
     Uses MemPalace's ``process_file`` which chunks the content and
@@ -83,13 +87,14 @@ def _index_file_sync(filepath: Path, vault_path: Path, wing: str) -> int:
         filepath: Absolute path to the markdown file.
         vault_path: Absolute path to the vault root.
         wing: MemPalace wing name.
+        collection: Shared ChromaDB collection instance. Must be
+            initialized on the calling thread before passing here.
 
     Returns:
         Number of drawers (chunks) indexed. 0 if skipped.
     """
     from mempalace.miner import process_file
 
-    collection = _get_collection()
     drawer_count, room = process_file(
         filepath=filepath,
         project_path=vault_path,
@@ -109,12 +114,8 @@ def _index_file_sync(filepath: Path, vault_path: Path, wing: str) -> int:
 def _remove_file_sync(source_file: str) -> int:
     """Remove all drawers for a source file from the palace. Synchronous.
 
-    MemPalace does not provide a built-in delete-by-source function,
-    so we query ChromaDB directly and delete matching drawer IDs.
-
     Args:
-        source_file: The source_file value stored in drawer metadata
-            (absolute path string as used during indexing).
+        source_file: The source_file value stored in drawer metadata.
 
     Returns:
         Number of drawers removed.
@@ -137,8 +138,6 @@ def _remove_file_sync(source_file: str) -> int:
 def _scan_vault_sync(vault_path: Path) -> list[Path]:
     """Scan the vault for all markdown files. Synchronous.
 
-    Skips hidden directories (starting with '.') and non-markdown files.
-
     Args:
         vault_path: Absolute path to the vault root.
 
@@ -147,7 +146,6 @@ def _scan_vault_sync(vault_path: Path) -> list[Path]:
     """
     md_files: list[Path] = []
     for path in vault_path.rglob("*.md"):
-        # Skip hidden directories (.obsidian, .git, .trash, etc.)
         if any(part.startswith(".") for part in path.relative_to(vault_path).parts):
             continue
         md_files.append(path)
@@ -155,16 +153,37 @@ def _scan_vault_sync(vault_path: Path) -> list[Path]:
 
 
 def _index_vault_sync(vault_path: Path, wing: str) -> tuple[int, int]:
+    """Index all markdown files in the vault concurrently. Synchronous.
+
+    Initializes the ChromaDB collection once on the calling thread,
+    then fans out to a thread pool for concurrent ONNX inference.
+    ChromaDB PersistentClient is not thread-safe to initialize
+    concurrently — this pattern avoids that race entirely.
+
+    Args:
+        vault_path: Absolute path to the vault root.
+        wing: MemPalace wing name.
+
+    Returns:
+        Tuple of (files_processed, total_drawers).
+    """
     md_files = _scan_vault_sync(vault_path)
     total_files = len(md_files)
     logger.info("Found %d markdown files in vault", total_files)
+
+    # Initialize collection once here — not inside worker threads.
+    # ChromaDB PersistentClient init is not thread-safe.
+    collection = _get_collection()
 
     total_drawers = 0
     files_processed = 0
     completed = 0
 
     with ThreadPoolExecutor(max_workers=_INDEX_WORKERS) as executor:
-        futures = {executor.submit(_index_file_sync, fp, vault_path, wing): fp for fp in md_files}
+        futures = {
+            executor.submit(_index_file_sync, fp, vault_path, wing, collection): fp
+            for fp in md_files
+        }
         for future in as_completed(futures):
             completed += 1
             filepath = futures[future]
@@ -188,15 +207,7 @@ def _index_vault_sync(vault_path: Path, wing: str) -> tuple[int, int]:
 
 
 async def index_vault() -> tuple[int, int]:
-    """Index the entire vault into MemPalace.
-
-    Runs the synchronous full-vault scan and indexing in a thread
-    to avoid blocking the event loop. Files already indexed with
-    unchanged mtimes are skipped automatically.
-
-    Returns:
-        Tuple of (files_processed, total_drawers).
-    """
+    """Index the entire vault into MemPalace."""
     settings = get_settings()
 
     if not settings.mempalace_enabled:
@@ -223,14 +234,7 @@ async def index_vault() -> tuple[int, int]:
 
 
 async def index_file(filepath: Path) -> int:
-    """Index or re-index a single file into MemPalace.
-
-    Args:
-        filepath: Absolute path to the markdown file.
-
-    Returns:
-        Number of drawers (chunks) indexed. 0 if skipped.
-    """
+    """Index or re-index a single file into MemPalace."""
     settings = get_settings()
 
     if not settings.mempalace_enabled:
@@ -244,18 +248,12 @@ async def index_file(filepath: Path) -> int:
         filepath=filepath,
         vault_path=vault_path,
         wing=wing,
+        collection=_get_collection(),
     )
 
 
 async def remove_file(filepath: Path) -> int:
-    """Remove a file's index entries from MemPalace.
-
-    Args:
-        filepath: Absolute path to the deleted markdown file.
-
-    Returns:
-        Number of drawers removed.
-    """
+    """Remove a file's index entries from MemPalace."""
     settings = get_settings()
 
     if not settings.mempalace_enabled:
