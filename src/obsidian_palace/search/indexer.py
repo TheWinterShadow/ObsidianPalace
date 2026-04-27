@@ -9,6 +9,7 @@ with ``asyncio.to_thread`` to avoid blocking the FastAPI event loop.
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from obsidian_palace.config import get_settings
@@ -52,6 +53,8 @@ DEFAULT_ROOMS: list[dict] = [
         "keywords": [],
     },
 ]
+
+_INDEX_WORKERS = 4
 
 
 def _get_collection():
@@ -152,30 +155,34 @@ def _scan_vault_sync(vault_path: Path) -> list[Path]:
 
 
 def _index_vault_sync(vault_path: Path, wing: str) -> tuple[int, int]:
-    """Index all markdown files in the vault. Synchronous.
-
-    Scans the vault for .md files and indexes each one via MemPalace's
-    ``process_file``. Files that haven't changed since the last index
-    are automatically skipped (mtime check in process_file).
-
-    Args:
-        vault_path: Absolute path to the vault root.
-        wing: MemPalace wing name.
-
-    Returns:
-        Tuple of (files_processed, total_drawers).
-    """
     md_files = _scan_vault_sync(vault_path)
-    logger.info("Found %d markdown files in vault", len(md_files))
+    total_files = len(md_files)
+    logger.info("Found %d markdown files in vault", total_files)
 
     total_drawers = 0
     files_processed = 0
+    completed = 0
 
-    for filepath in md_files:
-        count = _index_file_sync(filepath, vault_path, wing)
-        if count > 0:
-            files_processed += 1
-            total_drawers += count
+    with ThreadPoolExecutor(max_workers=_INDEX_WORKERS) as executor:
+        futures = {executor.submit(_index_file_sync, fp, vault_path, wing): fp for fp in md_files}
+        for future in as_completed(futures):
+            completed += 1
+            filepath = futures[future]
+            try:
+                count = future.result()
+                if count > 0:
+                    files_processed += 1
+                    total_drawers += count
+            except Exception:
+                logger.exception("Failed to index %s", filepath.name)
+
+            if completed % 100 == 0 or completed == total_files:
+                logger.info(
+                    "Indexing progress: %d/%d files complete, %d drawers so far",
+                    completed,
+                    total_files,
+                    total_drawers,
+                )
 
     return files_processed, total_drawers
 
