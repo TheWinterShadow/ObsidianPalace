@@ -155,7 +155,7 @@ def create_mcp_server() -> tuple[FastMCP, ObsidianPalaceOAuthProvider]:
             "Search coding best practices and guides from the vault. "
             "Looks up language-specific conventions, architecture patterns, tooling preferences, "
             "and development standards stored in '30_Knowledge/Coding Guides'. "
-            "Returns the full content of matching guides ranked by relevance."
+            "Returns the full content of matching guides."
         ),
     )
     async def coding_guidance_tool(query: str, limit: int = 5) -> str:
