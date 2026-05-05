@@ -100,5 +100,33 @@ echo "$MD_COUNT" > "$STATE_FILE"
 log "Updated last known good count: $MD_COUNT"
 
 # --- All gates passed — start sync ---
-log "All safety checks passed. Starting ob sync --continuous"
-exec ob sync --continuous --path "$VAULT_PATH"
+LAST_SYNCED_FILE="/tmp/ob-sync-last-synced"
+STUCK_TIMEOUT="${OBSIDIAN_PALACE_SYNC_STUCK_TIMEOUT:-1800}"  # default: 30 minutes
+
+log "All safety checks passed. Starting ob sync --continuous (stuck timeout: ${STUCK_TIMEOUT}s)"
+date +%s > "$LAST_SYNCED_FILE"
+
+# Pipe ob sync output through a heartbeat tracker that updates LAST_SYNCED_FILE
+# on every "Fully synced" line. When ob sync gets stuck in "Waiting to connect"
+# the heartbeat stops, and the watchdog loop below forces a restart.
+ob sync --continuous --path "$VAULT_PATH" | while IFS= read -r line; do
+    printf '%s\n' "$line"
+    [ "$line" = "Fully synced" ] && date +%s > "$LAST_SYNCED_FILE"
+done &
+PIPELINE_PID=$!
+
+trap 'kill "$PIPELINE_PID" 2>/dev/null; pkill -f "ob sync" 2>/dev/null; wait "$PIPELINE_PID" 2>/dev/null' EXIT
+
+while kill -0 "$PIPELINE_PID" 2>/dev/null; do
+    sleep 60
+    last=$(cat "$LAST_SYNCED_FILE" 2>/dev/null || echo 0)
+    now=$(date +%s)
+    age=$(( now - last ))
+    if [ "$age" -gt "$STUCK_TIMEOUT" ]; then
+        log "WATCHDOG: No 'Fully synced' for ${age}s (limit: ${STUCK_TIMEOUT}s) — restarting ob sync"
+        break
+    fi
+done
+
+# Exit non-zero so supervisord restarts sync-guard.sh
+exit 1
