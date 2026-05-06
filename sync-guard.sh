@@ -103,6 +103,14 @@ log "Updated last known good count: $MD_COUNT"
 LAST_SYNCED_FILE="/tmp/ob-sync-last-synced"
 STUCK_TIMEOUT="${OBSIDIAN_PALACE_SYNC_STUCK_TIMEOUT:-1800}"  # default: 30 minutes
 
+# Kill any orphaned ob sync process from a previous run before starting fresh.
+# The process appears in the table as "node .../cli.js sync --continuous ...",
+# so we match on "sync --continuous" rather than "ob sync".
+if pkill -f "sync --continuous" 2>/dev/null; then
+    log "Killed lingering ob sync process — waiting for cleanup"
+    sleep 2
+fi
+
 log "All safety checks passed. Starting ob sync --continuous (stuck timeout: ${STUCK_TIMEOUT}s)"
 date +%s > "$LAST_SYNCED_FILE"
 
@@ -115,7 +123,7 @@ ob sync --continuous --path "$VAULT_PATH" | while IFS= read -r line; do
 done &
 PIPELINE_PID=$!
 
-trap 'kill "$PIPELINE_PID" 2>/dev/null; pkill -f "ob sync" 2>/dev/null; wait "$PIPELINE_PID" 2>/dev/null' EXIT
+trap 'kill "$PIPELINE_PID" 2>/dev/null; pkill -f "sync --continuous" 2>/dev/null; wait "$PIPELINE_PID" 2>/dev/null' EXIT
 
 while kill -0 "$PIPELINE_PID" 2>/dev/null; do
     sleep 60
